@@ -8,14 +8,15 @@ from models.mlp_model import SimpleMLPModel
 from privacy.opacus_dp import train_with_opacus
 from attacks.label_flipping import poison_labels
 from configs.config import *
-from configs.config import EXPERIMENTS
 
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")
 
 
+
 class FLClient(fl.client.NumPyClient):
-    def __init__(self, client_id):
+    def __init__(self, client_id, exp_config):
+        self.exp_config = exp_config
         self.client_id = client_id
         self.model = SimpleMLPModel(INPUT_DIM).to(device)
         self.X, self.y = self.load_data()
@@ -30,8 +31,10 @@ class FLClient(fl.client.NumPyClient):
 
     def set_parameters(self, parameters):
         state_dict = dict(
-            zip(self.model.state_dict().keys(),
-                [torch.tensor(p) for p in parameters])
+            zip(
+                self.model.state_dict().keys(),
+                [torch.tensor(p) for p in parameters]
+            )
         )
         self.model.load_state_dict(state_dict)
 
@@ -41,21 +44,33 @@ class FLClient(fl.client.NumPyClient):
         y = self.y.copy()
 
         # Apply attack
-        if self.client_id in ATTACK_CLIENTS:
+        if self.exp_config["attack"] and self.client_id in ATTACK_CLIENTS:
             y = poison_labels(y)
-
-        weights, loss, epsilon = train_with_opacus(
-            self.model,
-            self.X,
-            y,
-            LOCAL_EPOCHS,
-            LEARNING_RATE,
-            BATCH_SIZE,
-            NOISE_MULTIPLIER,
-            MAX_GRAD_NORM
-        )
-
-        return self.get_parameters(config), len(self.X), {
+        if self.exp_config["dp"]:
+            weights, loss, epsilon = train_with_opacus(
+                self.model,
+                self.X,
+                y,
+                LOCAL_EPOCHS,
+                LEARNING_RATE,
+                BATCH_SIZE,
+                NOISE_MULTIPLIER,
+                MAX_GRAD_NORM
+            )
+        else:
+            from federated.client_training import train_local
+            weights, loss = train_local(
+                self.model,
+                self.X,
+                y,
+                LOCAL_EPOCHS,
+                LEARNING_RATE,
+                BATCH_SIZE
+            )
+            epsilon = 0.0
+        return [
+            val.cpu().numpy() for val in weights.values()
+        ], len(self.X), {
             "loss": loss,
             "epsilon": epsilon
         }

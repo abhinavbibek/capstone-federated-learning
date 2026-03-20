@@ -3,11 +3,14 @@ import flwr as fl
 import sys
 
 from clients.fl_client import FLClient
+from configs.config import EXPERIMENTS
 
-if __name__ == "__main__":
-    client_id = int(sys.argv[1])
+client_id = int(sys.argv[1])
+exp_name = sys.argv[2]
 
-    fl.client.start_numpy_client(
-        server_address="0.0.0.0:8080",
-        client=FLClient(client_id)
-    )
+exp_config = EXPERIMENTS[exp_name]
+
+fl.client.start_numpy_client(
+    server_address="0.0.0.0:8080",
+    client=FLClient(client_id, exp_config)
+)

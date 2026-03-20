@@ -15,6 +15,7 @@ for exp in EXPERIMENTS:
         os.system(f"python -m clients.run_client {i} {exp} &")
 
     # Wait (simple version)
-    os.system("sleep 60")
+    os.system("sleep 120")
+    os.system("pkill -f fl_server")
+    os.system("pkill -f run_client")
 
-    os.system("pkill -f python")

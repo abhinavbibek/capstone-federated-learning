@@ -17,7 +17,7 @@ def train_with_opacus(
 ):
 
     device = torch.device("cpu")
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     model.train()
 
@@ -52,5 +52,11 @@ def train_with_opacus(
             optimizer.step()
 
     epsilon = privacy_engine.get_epsilon(delta=1e-5)
+    raw_weights = model.state_dict()
 
-    return model.state_dict(), loss.item(), epsilon
+    cleaned_weights = {}
+    for key in raw_weights:
+        new_key = key.replace("_module.", "")
+        cleaned_weights[new_key] = raw_weights[key]
+
+    return cleaned_weights, loss.item(), epsilon
