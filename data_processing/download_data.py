@@ -1,66 +1,61 @@
-"""
-Download and preprocess UCI Adult dataset for federated learning
-"""
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 import pickle
 import os
+from sklearn.model_selection import train_test_split
 
 print("="*60)
-print("DOWNLOADING AND PREPROCESSING UCI ADULT DATASET")
+print("RESEARCH-GRADE PREPROCESSING: UCI ADULT")
 print("="*60)
 
-# Download Adult dataset
+# Load dataset
 url = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data"
 
 columns = ['age', 'workclass', 'fnlwgt', 'education', 'education_num',
            'marital_status', 'occupation', 'relationship', 'race', 'sex',
            'capital_gain', 'capital_loss', 'hours_per_week', 'native_country', 'income']
 
-print("\n📥 Downloading dataset from UCI repository...")
 df = pd.read_csv(url, names=columns, sep=',\s*',
                  engine='python', na_values='?')
-print(f"✅ Downloaded {len(df)} samples")
 
-# Remove missing values
-print("\n🧹 Cleaning data (removing missing values)...")
+print(f"Original samples: {len(df)}")
+
+# Drop missing
 df = df.dropna()
-print(f"✅ After cleaning: {len(df)} samples")
+print(f"After cleaning: {len(df)}")
 
-# Encode target (income >50K = 1, <=50K = 0)
+# Target encoding
 df['income'] = df['income'].apply(lambda x: 1 if '>50K' in x else 0)
 
-# Select numerical features only for simplicity (can add categorical later)
-numerical_cols = ['age', 'education_num',
-                  'capital_gain', 'capital_loss', 'hours_per_week']
-X = df[numerical_cols].values
+# Separate features
+X = df.drop('income', axis=1)
 y = df['income'].values
 
-print(f"\n📊 Feature Selection:")
-print(f"   Selected features: {', '.join(numerical_cols)}")
-print(f"   Feature matrix shape: {X.shape}")
+# One-hot encoding (CRITICAL)
+print("\n🔧 Applying one-hot encoding...")
+X = pd.get_dummies(X)
 
-# Normalize
-print("\n🔧 Normalizing features...")
-scaler = StandardScaler()
-X = scaler.fit_transform(X)
+feature_names = X.columns.tolist()
 
-# Class distribution
-class0_count = sum(y == 0)
-class1_count = sum(y == 1)
-print(f"\n📈 Class Distribution:")
-print(
-    f"   Income <=50K (Class 0): {class0_count} samples ({class0_count/len(y)*100:.1f}%)")
-print(
-    f"   Income >50K  (Class 1): {class1_count} samples ({class1_count/len(y)*100:.1f}%)")
+print(f"Total features after encoding: {len(feature_names)}")
+
+print("\nSkipping scaling at global level (will scale per client)")
+
+print(f"Final shape: {X.shape}")
+
+# Split BEFORE any scaling
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print(f"\nTrain shape: {X_train.shape}")
+print(f"Test shape: {X_test.shape}")
 
 # Save
 os.makedirs('data', exist_ok=True)
-with open('data/adult_processed.pkl', 'wb') as f:
-    pickle.dump({'X': X, 'y': y, 'scaler': scaler,
-                'feature_names': numerical_cols}, f)
 
-print(f"\n💾 Saved to: data/adult_processed.pkl")
-print("\n" + "="*60)
-print("✅ DATASET PREPROCESSING COMPLETED SUCCESSFULLY!")
-print("="*60)
+with open('data/train.pkl', 'wb') as f:
+    pickle.dump({'X': X_train, 'y': y_train, 'feature_names': feature_names}, f)
+
+with open('data/test.pkl', 'wb') as f:
+    pickle.dump({'X': X_test, 'y': y_test, 'feature_names': feature_names}, f)
+print("\nDATA READY")
