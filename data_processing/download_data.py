@@ -33,6 +33,7 @@ y = df['income'].values
 # One-hot encoding (CRITICAL)
 print("\n🔧 Applying one-hot encoding...")
 X = pd.get_dummies(X)
+X = X.astype('float32')
 
 feature_names = X.columns.tolist()
 

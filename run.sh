@@ -19,13 +19,13 @@ do
     sleep 5
 
     # Start clients
-    for i in {1..5}
+    for i in {1..10}
     do
         python -m clients.run_client $i $EXP &
     done
 
     # Wait for training to complete
-    sleep 120
+    sleep 180
 
     # Kill processes cleanly
     kill $SERVER_PID

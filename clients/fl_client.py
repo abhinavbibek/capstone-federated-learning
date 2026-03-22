@@ -3,12 +3,15 @@ import flwr as fl
 import torch
 import numpy as np
 import pickle
+import torch.nn as nn
 
 from models.mlp_model import SimpleMLPModel
 from privacy.opacus_dp import train_with_opacus
 from attacks.label_flipping import poison_labels
 from configs.config import *
 
+from utils.seed import set_seed
+set_seed(SEED)
 #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")
 
@@ -18,8 +21,11 @@ class FLClient(fl.client.NumPyClient):
     def __init__(self, client_id, exp_config):
         self.exp_config = exp_config
         self.client_id = client_id
-        self.model = SimpleMLPModel(INPUT_DIM).to(device)
         self.X, self.y = self.load_data()
+        input_dim = self.X.shape[1]
+        self.model = SimpleMLPModel(input_dim).to(device)
+        print(f"[Client {self.client_id}] X shape: {self.X.shape}")
+        print(f"[Client {self.client_id}] Samples: {len(self.X)}")
 
     def load_data(self):
         with open(f"data/client_{self.client_id}.pkl", "rb") as f:
@@ -27,8 +33,7 @@ class FLClient(fl.client.NumPyClient):
         return data["X"], data["y"]
 
     def get_parameters(self, config):
-        return [val.cpu().numpy() for val in self.model.state_dict().values()]
-
+        return [val.cpu().numpy() for _, val in self.model.state_dict().items()]
     def set_parameters(self, parameters):
         state_dict = dict(
             zip(
@@ -37,7 +42,7 @@ class FLClient(fl.client.NumPyClient):
             )
         )
         self.model.load_state_dict(state_dict)
-
+    
     def fit(self, parameters, config):
         self.set_parameters(parameters)
 
@@ -68,12 +73,11 @@ class FLClient(fl.client.NumPyClient):
                 BATCH_SIZE
             )
             epsilon = 0.0
-        return [
-            val.cpu().numpy() for val in weights.values()
-        ], len(self.X), {
-            "loss": loss,
-            "epsilon": epsilon
-        }
+        print(f"[Client {self.client_id}] Loss: {loss:.4f}, Epsilon: {epsilon:.2f}")
+        return fl.common.ndarrays_to_parameters(
+            [val.cpu().numpy() for val in weights.values()]
+        ), len(self.X), {"loss": loss, "epsilon": epsilon}
+
 
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
@@ -82,8 +86,11 @@ class FLClient(fl.client.NumPyClient):
         y = torch.FloatTensor(self.y).reshape(-1, 1).to(device)
 
         self.model.eval()
+        criterion = nn.BCELoss()
+
         with torch.no_grad():
             preds = self.model(X)
+            loss = criterion(preds, y).item()
             acc = ((preds > 0.5) == y).float().mean().item()
 
-        return float(acc), len(self.X), {"accuracy": acc}
+        return loss, len(self.X), {"accuracy": acc}

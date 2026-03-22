@@ -7,7 +7,6 @@ LOCAL_EPOCHS = 2
 BATCH_SIZE = 64
 LEARNING_RATE = 0.01
 
-INPUT_DIM = 5
 
 # Adversarial clients
 ATTACK_CLIENTS = [7, 9]
