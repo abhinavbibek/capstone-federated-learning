@@ -31,7 +31,7 @@ def get_eval_fn():
 
         model = SimpleMLPModel(X_test.shape[1])
 
-        params = fl.common.parameters_to_ndarrays(parameters)
+        params = parameters
 
         params_dict = zip(model.state_dict().keys(), params)
         state_dict = {k: torch.tensor(v) for k, v in params_dict}
