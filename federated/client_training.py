@@ -2,15 +2,18 @@
 import torch
 import torch.nn as nn
 
-def train_local(model, X, y, epochs=2, lr=0.01, batch_size=64):
+def train_local(model, X, y, epochs, lr, batch_size):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model.to(device)
     model.train()
 
+    num_pos = y.sum().item()
+    num_neg = len(y) - num_pos
+
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     X = torch.FloatTensor(X).to(device)
     y = torch.FloatTensor(y).reshape(-1, 1).to(device)
@@ -24,6 +27,7 @@ def train_local(model, X, y, epochs=2, lr=0.01, batch_size=64):
         y = y[perm]
 
         epoch_loss = 0
+        num_batches = 0
 
         for i in range(0, dataset_size, batch_size):
 
@@ -40,5 +44,6 @@ def train_local(model, X, y, epochs=2, lr=0.01, batch_size=64):
             optimizer.step()
 
             epoch_loss += loss.item()
+            num_batches += 1
 
-    return model.state_dict(), epoch_loss / (dataset_size // batch_size)
+    return model.state_dict(), epoch_loss / num_batches

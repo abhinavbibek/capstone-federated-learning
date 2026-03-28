@@ -12,6 +12,8 @@ from sklearn.preprocessing import StandardScaler
 from configs.config import *
 from federated.client_training import train_local
 from utils.seed import set_seed
+import logging
+logging.getLogger("flwr").setLevel(logging.ERROR)
 set_seed(SEED)
 #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")
@@ -26,6 +28,8 @@ class FLClient(fl.client.NumPyClient):
         input_dim = self.X.shape[1]
         self.model = SimpleMLPModel(input_dim).to(device)
         print(f"[Client {self.client_id}] X shape: {self.X.shape}")
+        print(f"[Client {self.client_id}] Feature count: {self.X.shape[1]}")
+        print(f"[Client {self.client_id}] Label distribution: {np.unique(self.y, return_counts=True)}")
         print(f"[Client {self.client_id}] Samples: {len(self.X)}")
 
 
@@ -33,8 +37,14 @@ class FLClient(fl.client.NumPyClient):
         with open(f"data/client_{self.client_id}.pkl", "rb") as f:
             data = pickle.load(f)
 
-        scaler = StandardScaler()
-        X = scaler.fit_transform(data["X"])
+        with open("data/global_scaler.pkl", "rb") as f:
+            scaler = pickle.load(f)
+
+        X_raw = data["X"]
+        if hasattr(X_raw, "values"):
+            X_raw = X_raw.values
+
+        X = scaler.transform(X_raw)
 
         return X.astype("float32"), data["y"]
 
@@ -94,11 +104,12 @@ class FLClient(fl.client.NumPyClient):
         y = torch.FloatTensor(self.y).reshape(-1, 1).to(device)
 
         self.model.eval()
-        criterion = nn.BCELoss()
+        criterion = nn.BCEWithLogitsLoss()
 
-        with torch.no_grad():
-            preds = self.model(X)
-            loss = criterion(preds, y).item()
-            acc = ((preds > 0.5) == y).float().mean().item()
+        logits = self.model(X)
+        loss = criterion(logits, y).item()
+
+        probs = torch.sigmoid(logits)
+        acc = ((probs > 0.5) == y).float().mean().item()
 
         return loss, len(self.X), {"accuracy": acc}
