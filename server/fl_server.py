@@ -17,11 +17,11 @@ from utils.seed import set_seed
 import logging
 logging.getLogger("flwr").setLevel(logging.ERROR)
 set_seed(SEED)
-history = []
+
 
 
 def get_eval_fn(exp_name):
-
+    history = []
     with open('data/test.pkl', 'rb') as f:
         data = pickle.load(f)
 
@@ -97,10 +97,13 @@ if __name__ == "__main__":
 
     print(f"Starting server for experiment: {exp_name}")
 
-    if exp_config["robust"]:
-        print("Using Robust Aggregation (Median)")
+    defense = exp_config.get("defense", None)
+
+    if defense in ["median", "trimmed_mean", "krum", "clipping"]:
+        print(f"Using Robust Strategy: {defense}")
+
         strategy = RobustFedAvg(
-            method="median",
+            method=defense,
             evaluate_fn=get_eval_fn(exp_name),
             fraction_fit=1.0,
             min_fit_clients=NUM_CLIENTS,
@@ -108,6 +111,7 @@ if __name__ == "__main__":
             fraction_evaluate=1.0,
             min_evaluate_clients=NUM_CLIENTS,
         )
+
     else:
         print("Using Standard FedAvg")
         strategy = fl.server.strategy.FedAvg(

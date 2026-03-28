@@ -4,8 +4,26 @@ import numpy as np
 
 from server.robust_aggregation import (
     median_aggregation,
-    trimmed_mean_aggregation
+    trimmed_mean_aggregation,
+    krum_aggregation
 )
+
+
+def clip_updates(weights, threshold=5.0):
+    clipped = []
+
+    for client_weights in weights:
+        total_norm = np.sqrt(
+            sum(np.sum(w**2) for w in client_weights)
+        )
+
+        if total_norm > threshold:
+            scale = threshold / (total_norm + 1e-6)
+            client_weights = [w * scale for w in client_weights]
+
+        clipped.append(client_weights)
+
+    return clipped
 
 
 class RobustFedAvg(fl.server.strategy.FedAvg):
@@ -24,10 +42,20 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
             for _, fit_res in results
         ]
 
+        # ================= CLIPPING =================
+        if self.method == "clipping":
+            weights = clip_updates(weights, threshold=5.0)
+
+        # ================= KRUM =================
+        if self.method == "krum":
+            selected = krum_aggregation(weights)
+            parameters = fl.common.ndarrays_to_parameters(selected)
+            return parameters, {}
+
+        # ================= MEDIAN / TRIMMED =================
         aggregated = []
 
         for layer in zip(*weights):
-
             layer_stack = np.stack(layer, axis=0)
 
             if self.method == "median":
@@ -43,8 +71,12 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
 
                 agg_layer = np.mean(trimmed, axis=0)
 
+            elif self.method == "clipping":
+                # clipping + mean
+                agg_layer = np.mean(layer_stack, axis=0)
+
             else:
-                raise ValueError("Unknown aggregation method")
+                raise ValueError("Unknown defense method")
 
             aggregated.append(agg_layer)
 

@@ -14,7 +14,23 @@ export PYTHONPATH=$(pwd)
 
 trap "echo 'Cleaning up...' | tee -a $LOG_FILE; pkill -f fl_server; pkill -f run_client; exit" SIGINT
 
-EXPERIMENTS=("baseline" "label_flip" "targeted_flip" "feature_poison" "sign_flip" "scaling" "dp_only" "full_system")
+EXPERIMENTS=(
+"baseline"
+
+# attack only
+"label_flip_only"
+"targeted_flip_only"
+"feature_poison_only"
+"sign_flip_only"
+"scaling_only"
+
+# attack + defense
+"label_flip_median" "label_flip_trimmed" "label_flip_krum" "label_flip_clip"
+"targeted_flip_median" "targeted_flip_trimmed" "targeted_flip_krum" "targeted_flip_clip"
+"feature_poison_median" "feature_poison_trimmed" "feature_poison_krum" "feature_poison_clip"
+"sign_flip_median" "sign_flip_trimmed" "sign_flip_krum" "sign_flip_clip"
+"scaling_median" "scaling_trimmed" "scaling_krum" "scaling_clip"
+)
 
 for EXP in "${EXPERIMENTS[@]}"
 do

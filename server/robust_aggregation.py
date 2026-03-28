@@ -20,3 +20,24 @@ def trimmed_mean_aggregation(weights_list, trim_ratio=0.2):
     trimmed = sorted_weights[trim_k: n_clients - trim_k]
 
     return np.mean(trimmed, axis=0)
+
+def krum_aggregation(weights, f=2):
+    n = len(weights)
+    scores = []
+
+    for i in range(n):
+        distances = []
+        for j in range(n):
+            if i != j:
+                dist = sum(
+                    np.linalg.norm(w1 - w2)**2
+                    for w1, w2 in zip(weights[i], weights[j])
+                )
+                distances.append(dist)
+
+        distances.sort()
+        score = sum(distances[:n - f - 2])
+        scores.append(score)
+
+    selected_idx = np.argmin(scores)
+    return weights[selected_idx]
