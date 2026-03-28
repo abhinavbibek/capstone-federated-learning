@@ -45,5 +45,5 @@ def train_local(model, X, y, epochs, lr, batch_size):
 
             epoch_loss += loss.item()
             num_batches += 1
-
+    
     return model.state_dict(), epoch_loss / num_batches

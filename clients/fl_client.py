@@ -7,7 +7,9 @@ import torch.nn as nn
 
 from models.mlp_model import SimpleMLPModel
 from privacy.opacus_dp import train_with_opacus
-from attacks.label_flipping import poison_labels
+from attacks.label_flipping import label_flip, targeted_label_flip
+from attacks.feature_poisoning import feature_poison
+from attacks.model_poisoning import sign_flipping, scaling_attack
 from sklearn.preprocessing import StandardScaler
 from configs.config import *
 from federated.client_training import train_local
@@ -57,19 +59,39 @@ class FLClient(fl.client.NumPyClient):
         self.model.load_state_dict(state_dict, strict=True)
 
     def fit(self, parameters, config):
+
         self.model.to(device)
         self.set_parameters(parameters)
 
+        attack_type = self.exp_config["attack"]
+
+        # Clean copies
+        X = self.X.copy()
         y = self.y.copy()
 
-        # Apply attack
-        if self.exp_config["attack"] and self.client_id in ATTACK_CLIENTS:
-            y = poison_labels(y)
+        is_attacker = attack_type and self.client_id in ATTACK_CLIENTS
 
+        # ======================
+        # DATA POISONING
+        # ======================
+        if is_attacker:
+
+            if attack_type == "label_flip":
+                y = label_flip(y)
+
+            elif attack_type == "targeted_flip":
+                y = targeted_label_flip(y)
+
+            elif attack_type == "feature_poison":
+                X = feature_poison(X)
+
+        # ======================
+        # TRAINING
+        # ======================
         if self.exp_config["dp"]:
             weights, loss, epsilon = train_with_opacus(
                 self.model,
-                self.X,
+                X,
                 y,
                 LOCAL_EPOCHS,
                 LEARNING_RATE,
@@ -80,7 +102,7 @@ class FLClient(fl.client.NumPyClient):
         else:
             weights, loss = train_local(
                 self.model,
-                self.X,
+                X,
                 y,
                 LOCAL_EPOCHS,
                 LEARNING_RATE,
@@ -88,13 +110,31 @@ class FLClient(fl.client.NumPyClient):
             )
             epsilon = 0.0
 
-        print(f"[Client {self.client_id}] Loss: {loss:.4f}, Epsilon: {epsilon:.2f}")
+        # ======================
+        # MODEL POISONING
+        # ======================
+        if is_attacker:
 
-        # ✅ Convert state_dict → list of numpy arrays
+            if attack_type == "sign_flip":
+                weights = sign_flipping(weights)
+
+            elif attack_type == "scaling":
+                weights = scaling_attack(weights)
+
+        # ======================
+        # LOGGING (clean + correct)
+        # ======================
+        if is_attacker:
+            print(f"[Client {self.client_id}] ATTACK={attack_type} | Loss={loss:.4f}")
+        else:
+            print(f"[Client {self.client_id}] benign | Loss={loss:.4f}")
+
         weights_ndarrays = [val.cpu().numpy() for val in weights.values()]
 
-        # ✅ RETURN CORRECT FORMAT
-        return weights_ndarrays, len(self.X), {"loss": float(loss), "epsilon": float(epsilon)}
+        return weights_ndarrays, len(self.X), {
+            "loss": float(loss),
+            "epsilon": float(epsilon)
+        }
 
 
     def evaluate(self, parameters, config):

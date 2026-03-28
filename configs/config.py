@@ -9,7 +9,7 @@ LEARNING_RATE = 0.001
 
 
 # Adversarial clients
-ATTACK_CLIENTS = [7, 9]
+ATTACK_CLIENTS = [6, 7, 9, 10]
 
 # Differential Privacy settings
 NOISE_MULTIPLIER = 1.0
@@ -21,12 +21,32 @@ SEED = 42
 EXPERIMENTS = {
     "baseline": {
         "dp": False,
-        "attack": False,
+        "attack": None,
         "robust": False,
     },
-    "attack_only": {
+    "label_flip": {
         "dp": False,
-        "attack": True,
+        "attack": "label_flip",
+        "robust": False,
+    },
+    "targeted_flip": {
+        "dp": False,
+        "attack": "targeted_flip",
+        "robust": False,
+    },
+    "feature_poison": {
+        "dp": False,
+        "attack": "feature_poison",
+        "robust": False,
+    },
+    "sign_flip": {
+        "dp": False,
+        "attack": "sign_flip",
+        "robust": False,
+    },
+    "scaling": {
+        "dp": False,
+        "attack": "scaling",
         "robust": False,
     },
     "dp_only": {

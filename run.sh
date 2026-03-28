@@ -14,12 +14,12 @@ export PYTHONPATH=$(pwd)
 
 trap "echo 'Cleaning up...' | tee -a $LOG_FILE; pkill -f fl_server; pkill -f run_client; exit" SIGINT
 
-EXPERIMENTS=("baseline" "attack_only" "dp_only" "full_system")
+EXPERIMENTS=("baseline" "label_flip" "targeted_flip" "feature_poison" "sign_flip" "scaling" "dp_only" "full_system")
 
 for EXP in "${EXPERIMENTS[@]}"
 do
     echo "======================================" | tee -a $LOG_FILE
-    echo "Running experiment: $EXP" | tee -a $LOG_FILE
+    echo -e "\n\n==================== $EXP ====================\n" | tee -a $LOG_FILE
     echo "======================================" | tee -a $LOG_FILE
 
     # Start server
