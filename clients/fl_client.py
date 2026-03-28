@@ -6,7 +6,6 @@ import pickle
 import torch.nn as nn
 
 from models.mlp_model import SimpleMLPModel
-from privacy.opacus_dp import train_with_opacus
 from attacks.label_flipping import label_flip, targeted_label_flip
 from attacks.feature_poisoning import feature_poison
 from attacks.model_poisoning import sign_flipping, scaling_attack
@@ -88,27 +87,16 @@ class FLClient(fl.client.NumPyClient):
         # ======================
         # TRAINING
         # ======================
-        if self.exp_config["dp"]:
-            weights, loss, epsilon = train_with_opacus(
-                self.model,
-                X,
-                y,
-                LOCAL_EPOCHS,
-                LEARNING_RATE,
-                BATCH_SIZE,
-                NOISE_MULTIPLIER,
-                MAX_GRAD_NORM
-            )
-        else:
-            weights, loss = train_local(
-                self.model,
-                X,
-                y,
-                LOCAL_EPOCHS,
-                LEARNING_RATE,
-                BATCH_SIZE
-            )
-            epsilon = 0.0
+        
+        weights, loss = train_local(
+            self.model,
+            X,
+            y,
+            LOCAL_EPOCHS,
+            LEARNING_RATE,
+            BATCH_SIZE
+        )
+        epsilon = 0.0
 
         # ======================
         # MODEL POISONING

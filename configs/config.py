@@ -1,7 +1,7 @@
 # configs/config.py
 
 NUM_CLIENTS = 10
-ROUNDS = 5
+ROUNDS = 10
 
 LOCAL_EPOCHS = 8
 BATCH_SIZE = 64
@@ -11,12 +11,10 @@ LEARNING_RATE = 0.001
 # Adversarial clients
 ATTACK_CLIENTS = [6, 7, 9, 10]
 
-# Differential Privacy settings
-NOISE_MULTIPLIER = 1.0
-MAX_GRAD_NORM = 1.0
 
 # Random seed for reproducibility
 SEED = 42
+
 
 EXPERIMENTS = {
     "baseline": {"attack": None, "defense": None},
