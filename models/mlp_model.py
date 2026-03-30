@@ -6,15 +6,29 @@ import torch
 import torch.nn as nn
 
 
-class SimpleMLPModel(nn.Module):
-    """
-    Lightweight MLP with single hidden layer as specified in methodology
-    """
+# class SimpleMLPModel(nn.Module):
+#     """
+#     Lightweight MLP with single hidden layer as specified in methodology
+#     """
 
-    def __init__(self, input_dim=5):
-        super(SimpleMLPModel, self).__init__()
+#     def __init__(self, input_dim=5):
+#         super(SimpleMLPModel, self).__init__()
+#         self.network = nn.Sequential(
+#             nn.Linear(input_dim, 64),
+#             nn.ReLU(),
+#             nn.Linear(64, 1)
+#         )
+
+#     def forward(self, x):
+#         return self.network(x)
+
+class SimpleMLPModel(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
         self.network = nn.Sequential(
-            nn.Linear(input_dim, 64),
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
             nn.ReLU(),
             nn.Linear(64, 1)
         )

@@ -1,6 +1,5 @@
 experiment,accuracy,f1,auc
 baseline,0.8238,0.6941,0.9016
-dp_only,0.3449,0.3256,0.3941
 feature_poison,0.8057,0.6786,0.8943
 feature_poison_clip,0.788,0.6614,0.8899
 feature_poison_krum,0.766,0.6315,0.8639

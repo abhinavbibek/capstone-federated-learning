@@ -12,6 +12,7 @@ from attacks.model_poisoning import sign_flipping, scaling_attack
 from sklearn.preprocessing import StandardScaler
 from configs.config import *
 from federated.client_training import train_local
+from privacy.opacus_dp import train_with_opacus
 from utils.seed import set_seed
 import logging
 logging.getLogger("flwr").setLevel(logging.ERROR)
@@ -88,15 +89,41 @@ class FLClient(fl.client.NumPyClient):
         # TRAINING
         # ======================
         
-        weights, loss = train_local(
-            self.model,
-            X,
-            y,
-            LOCAL_EPOCHS,
-            LEARNING_RATE,
-            BATCH_SIZE
-        )
-        epsilon = 0.0
+        dp_mode = self.exp_config.get("dp", None)
+
+        if dp_mode in ["local", "hybrid_adaptive"]:
+            noise = self.exp_config.get("noise", 1.0)
+            clip = self.exp_config.get("clip", 1.0)
+            # hybrid = lighter noise
+            if dp_mode == "hybrid_adaptive":
+                noise = noise * 1.2   # slightly stronger DP
+                clip = clip * 1.2     # allow larger gradients (compensate)
+
+
+            is_adaptive = (dp_mode == "hybrid_adaptive")
+
+            weights, loss, epsilon = train_with_opacus(
+                self.model,
+                X,
+                y,
+                LOCAL_EPOCHS,
+                LEARNING_RATE,
+                BATCH_SIZE,
+                noise,
+                clip,
+                adaptive=is_adaptive   # 🔥 ONLY CHANGE
+            )
+
+        else:
+            weights, loss = train_local(
+                self.model,
+                X,
+                y,
+                LOCAL_EPOCHS,
+                LEARNING_RATE,
+                BATCH_SIZE
+            )
+            epsilon = 0.0
 
         # ======================
         # MODEL POISONING

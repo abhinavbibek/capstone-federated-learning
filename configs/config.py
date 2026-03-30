@@ -3,7 +3,7 @@
 NUM_CLIENTS = 10
 ROUNDS = 10
 
-LOCAL_EPOCHS = 8
+LOCAL_EPOCHS = 12
 BATCH_SIZE = 64
 LEARNING_RATE = 0.001
 
@@ -51,4 +51,47 @@ EXPERIMENTS = {
     "scaling_trimmed": {"attack": "scaling", "defense": "trimmed_mean"},
     "scaling_krum": {"attack": "scaling", "defense": "krum"},
     "scaling_clip": {"attack": "scaling", "defense": "clipping"},
+
+    # ================= DP EXPERIMENTS =================
+
+    "dp_local_eps1": {
+        "attack": None,
+        "dp": "local",
+        "noise": 2.0,
+        "clip": 1.0
+    },
+
+    "dp_local_eps2": {
+        "attack": None,
+        "dp": "local",
+        "noise": 1.0,
+        "clip": 1.0
+    },
+
+    "dp_local_eps5": {
+        "attack": None,
+        "dp": "local",
+        "noise": 0.5,
+        "clip": 1.0
+    },
+
+    "dp_server_fixed": {
+        "attack": None,
+        "dp": None,
+        "defense": "dp_server_fixed"
+    },
+
+    "dp_server_adaptive": {
+        "attack": None,
+        "dp": None,
+        "defense": "dp_server_adaptive"
+    },
+
+    "dp_hybrid_adaptive": {
+        "attack": None,
+        "dp": "hybrid_adaptive",  
+        "defense": None,          
+        "noise": 1.0,
+        "clip": 1.0
+    },
 }

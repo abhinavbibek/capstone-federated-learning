@@ -15,6 +15,7 @@ from server.robust_strategy import RobustFedAvg
 from configs.config import EXPERIMENTS
 from utils.seed import set_seed
 import logging
+from analysis.shap_analysis import run_shap_analysis
 logging.getLogger("flwr").setLevel(logging.ERROR)
 set_seed(SEED)
 
@@ -41,6 +42,14 @@ def get_eval_fn(exp_name):
     print("Test label distribution:", np.unique(y_test.numpy(), return_counts=True))
 
     def evaluate(server_round, parameters, config):
+        X_np = X_test.numpy()  
+        feature_mean = np.mean(X_np[:, 0])
+
+        def leakage_score(probs, X):
+            feature = X[:, 0]
+            pred = (probs > 0.5).astype(int)
+            true = (feature > feature_mean).astype(int)
+            return np.mean(pred == true)
 
         device = torch.device("cpu")
         model = SimpleMLPModel(X_test.shape[1]).to(device)
@@ -51,7 +60,7 @@ def get_eval_fn(exp_name):
         os.makedirs("results", exist_ok=True)
         model.eval()
         criterion = nn.BCEWithLogitsLoss()
-
+        
         # Move data to same device
         X = X_test.to(device)
         y = y_test.to(device)
@@ -62,6 +71,7 @@ def get_eval_fn(exp_name):
             loss = criterion(logits, y).item()
 
             probs = torch.sigmoid(logits)
+            leakage = leakage_score(probs.cpu().numpy().ravel(), X.cpu().numpy())
 
             y_true = y.cpu().numpy().ravel()
             y_pred = (probs > 0.5).cpu().numpy().ravel()
@@ -82,13 +92,23 @@ def get_eval_fn(exp_name):
             "loss": loss,
             "accuracy": acc,
             "f1": f1,
-            "auc": auc
+            "auc": auc,
+            "leakage": float(leakage)
         })
         with open(f"results/{exp_name}.json", "w") as f:
             json.dump(history, f, indent=4)
+        # Detect last round
+        if server_round == ROUNDS:
 
+            print("\n[INFO] Running SHAP analysis...")
+
+            # Save model temporarily
+            torch.save(model.state_dict(), f"results/{exp_name}_model.pt")
+
+            # Run SHAP
+            run_shap_analysis(exp_name, model)
         return loss, {"accuracy": acc}
-
+    
     return evaluate
 
 if __name__ == "__main__":
@@ -99,7 +119,10 @@ if __name__ == "__main__":
 
     defense = exp_config.get("defense", None)
 
-    if defense in ["median", "trimmed_mean", "krum", "clipping"]:
+    if defense in [
+        "median", "trimmed_mean", "krum", "clipping",
+        "dp_server_fixed", "dp_server_adaptive"
+    ]:
         print(f"Using Robust Strategy: {defense}")
 
         strategy = RobustFedAvg(
@@ -128,3 +151,4 @@ if __name__ == "__main__":
         config=fl.server.ServerConfig(num_rounds=ROUNDS),
         strategy=strategy,
     )
+    
