@@ -70,11 +70,15 @@ def compute_shap(model, X, exp_name, sample_size=100):
     shap_values = np.array(shap_values)
 
     global_importance = np.mean(np.abs(shap_values), axis=0)
+
+    # 🔥 FORCE FLATTEN (CRITICAL FIX)
+    global_importance = np.array(global_importance).reshape(-1)
     top_features = np.argsort(global_importance)[-10:][::-1]
 
     print(f"\n[{exp_name.upper()}] Top Features:")
     for f in top_features:
-        print(f"Feature {f} → Importance: {global_importance[f]:.4f}")
+        value = float(global_importance[f])
+        print(f"Feature {f} → Importance: {value:.4f}")
 
     return shap_values, global_importance
 
@@ -179,7 +183,7 @@ def explain_single_prediction(model, X, shap_values, idx=0, feature_names=None):
 
     for f in reversed(top_features):
         name = f"feature_{f}" if feature_names is None else feature_names[f]
-        contribution = shap_val[f]
+        contribution = float(shap_val[f])
 
         direction = "increased" if contribution > 0 else "decreased"
 

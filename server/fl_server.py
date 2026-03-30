@@ -85,7 +85,7 @@ def get_eval_fn(exp_name):
                 auc = 0.0
 
         # print(f"[Round {server_round}] Loss: {loss:.4f}, Accuracy: {acc:.4f}")
-        print(f"Round {server_round:02d} | Loss: {loss:.4f} | Acc: {acc:.4f} | F1: {f1:.4f} | AUC: {auc:.4f}")
+        print(f"Round {server_round:02d} | Loss: {loss:.4f} | Acc: {acc:.4f} | F1: {f1:.4f} | AUC: {auc:.4f} | Leakage: {leakage:.4f}")
 
         history.append({
             "round": server_round,
@@ -97,6 +97,7 @@ def get_eval_fn(exp_name):
         })
         with open(f"results/{exp_name}.json", "w") as f:
             json.dump(history, f, indent=4)
+
         # Detect last round
         if server_round == ROUNDS:
 
