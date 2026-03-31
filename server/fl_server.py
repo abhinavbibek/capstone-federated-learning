@@ -99,15 +99,52 @@ def get_eval_fn(exp_name):
             json.dump(history, f, indent=4)
 
         # Detect last round
+        # if server_round == ROUNDS:
+
+        #     print("\n[INFO] Running SHAP analysis...")
+
+        #     # Save model temporarily
+        #     torch.save(model.state_dict(), f"results/{exp_name}_model.pt")
+
+        #     # Run SHAP
+        #     run_shap_analysis(exp_name, model)
+        #     if server_round > 1:
+        #     try:
+        #         from analysis.shap_analysis import load_shap, shap_drift
+
+        #         base_vals, base_global = load_shap("baseline")
+        #         curr_vals, curr_global = load_shap(exp_name)
+
+        #         drift = shap_drift(base_global, curr_global)
+
+        #         print(f"[SHAP DRIFT] {drift:.4f}")
+
+        #         if drift > 0.2:
+        #             print("[WARNING] High explanation drift detected → possible attack")
+        #     except:
+        #         pass
+
         if server_round == ROUNDS:
 
             print("\n[INFO] Running SHAP analysis...")
 
-            # Save model temporarily
             torch.save(model.state_dict(), f"results/{exp_name}_model.pt")
-
-            # Run SHAP
             run_shap_analysis(exp_name, model)
+
+            try:
+                from analysis.shap_analysis import load_shap, shap_drift
+
+                base_vals, base_global = load_shap("baseline")
+                curr_vals, curr_global = load_shap(exp_name)
+
+                drift = shap_drift(base_global, curr_global)
+
+                print(f"[SHAP DRIFT] {drift:.4f}")
+
+                if drift > 0.2:
+                    print("[WARNING] High explanation drift detected → possible attack")
+            except:
+                pass       
         return loss, {"accuracy": acc}
     
     return evaluate
@@ -122,7 +159,7 @@ if __name__ == "__main__":
 
     if defense in [
         "median", "trimmed_mean", "krum", "clipping",
-        "dp_server_fixed", "dp_server_adaptive"
+        "dp_server_fixed", "dp_server_adaptive", "trust" 
     ]:
         print(f"Using Robust Strategy: {defense}")
 

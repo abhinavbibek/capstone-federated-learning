@@ -62,6 +62,11 @@ class FLClient(fl.client.NumPyClient):
 
         self.model.to(device)
         self.set_parameters(parameters)
+        # ================= TRUST-AWARE DP =================
+        # trust_factor = config.get("trust", 1.0)
+
+        # # low trust → more noise
+        # noise = noise * (1 + (1 - trust_factor))
 
         attack_type = self.exp_config["attack"]
 

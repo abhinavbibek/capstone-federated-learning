@@ -94,4 +94,12 @@ EXPERIMENTS = {
         "noise": 1.0,
         "clip": 1.0
     },
+
+    "final_system": {
+    "attack": "label_flip",
+    "dp": "hybrid_adaptive",
+    "defense": "trust",  
+    "noise": 1.0,
+    "clip": 1.0
+}
 }

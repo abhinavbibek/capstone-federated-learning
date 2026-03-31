@@ -14,7 +14,7 @@ export PYTHONPATH=$(pwd)
 
 trap "echo 'Cleaning up...' | tee -a $LOG_FILE; pkill -f fl_server; pkill -f run_client; exit" SIGINT
 
-# EXPERIMENTS=(
+EXPERIMENTS=(
 # "baseline"
 
 # #attack only
@@ -34,14 +34,12 @@ trap "echo 'Cleaning up...' | tee -a $LOG_FILE; pkill -f fl_server; pkill -f run
 # #DP experiments
 # "dp_local_eps1" "dp_local_eps2" "dp_local_eps5" "dp_server_fixed" "dp_server_adaptive" "dp_hybrid"
 # "dp_hybrid_adaptive"
-# )
 
-EXPERIMENTS=(
-"baseline"
-"label_flip_only"
-"label_flip_median"
-"dp_local_eps1"
+#final system
+"final_system"
 )
+
+
 
 for EXP in "${EXPERIMENTS[@]}"
 do
@@ -62,10 +60,7 @@ do
         python -m clients.run_client $i $EXP >> $LOG_FILE 2>&1 &
         CLIENT_PIDS+=($!)
     done
-
-    sleep 100
-
-    kill $SERVER_PID
+    wait $SERVER_PID
 
     for PID in "${CLIENT_PIDS[@]}"
     do
