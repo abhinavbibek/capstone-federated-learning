@@ -121,6 +121,24 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
             trust_scores = self.trust_manager.compute_trust(weights)
         else:
             trust_scores = np.ones(len(weights)) / len(weights)
+        
+        # --- TRUST FILTERING ---
+        trust_threshold = np.percentile(trust_scores, 30)  # bottom 30% removed
+
+        mask = trust_scores > trust_threshold
+
+        filtered_weights = [w for w, m in zip(weights, mask) if m]
+        filtered_losses = [l for l, m in zip(losses, mask) if m]
+        filtered_trust = trust_scores[mask]
+
+        num_removed = len(weights) - len(filtered_weights)
+        print(f"[TRUST] Filtered {num_removed} clients")
+
+        # Fallback (avoid empty aggregation)
+        if len(filtered_weights) == 0:
+            print("[TRUST WARNING] All clients filtered → fallback to original")
+            filtered_weights = weights
+            filtered_trust = trust_scores
 
         # ================= CLIENT WEIGHTS =================
         loss_weights = np.exp(-losses)
