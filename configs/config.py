@@ -99,7 +99,7 @@ EXPERIMENTS = {
     "attack": "label_flip",
     "dp": "hybrid_adaptive",
     "defense": "trust",  
-    "noise": 1.0,
+    "noise": 1.5,
     "clip": 1.0
 }
 }

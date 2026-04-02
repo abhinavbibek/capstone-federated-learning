@@ -178,6 +178,7 @@ def explain_single_prediction(model, X, shap_values, idx=0, feature_names=None):
     shap_val = shap_values[idx]
 
     top_features = np.argsort(np.abs(shap_val))[-5:]
+    top_features = list(dict.fromkeys(top_features))  # remove duplicates   
 
     explanation = []
 
