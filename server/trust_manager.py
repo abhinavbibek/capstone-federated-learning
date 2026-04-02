@@ -1,5 +1,5 @@
 #server/trust_manager.py
-import numpy as np
+#import numpy as np
 
 # class TrustManager:
 #     def __init__(self):
@@ -57,6 +57,8 @@ import numpy as np
 #         return trust
 
 
+#server/trust_manager.py
+import numpy as np
 class TrustManager:
     def __init__(self):
         self.prev_updates = {}  # client_id → flattened weights
