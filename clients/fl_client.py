@@ -172,15 +172,3 @@ class FLClient(fl.client.NumPyClient):
         acc = ((probs > 0.5) == y).float().mean().item()
 
         return loss, len(self.X), {"accuracy": acc}
-
-
-
-
-
-
-
-
-
-
-
-
