@@ -91,20 +91,17 @@ class FLClient(fl.client.NumPyClient):
         
         dp_mode = self.exp_config.get("dp", None)
 
-        if dp_mode in ["local", "hybrid_adaptive"]:
+        if dp_mode in ["local", "local_adaptive"]:
             noise = self.exp_config.get("noise", 1.0)
             clip = self.exp_config.get("clip", 1.0)
             # hybrid = lighter noise
-            if dp_mode == "hybrid_adaptive":
-                noise = noise * 1.2   # slightly stronger DP
-                clip = clip * 1.2     # allow larger gradients (compensate)
 
 
             # 🔥 Disable adaptive for final system
             if self.exp_config.get("defense") == "trust":
                 is_adaptive = False
             else:
-                is_adaptive = (dp_mode == "hybrid_adaptive")
+                is_adaptive = (dp_mode == "local_adaptive")
 
             weights, loss, epsilon = train_with_opacus(
                 self.model,

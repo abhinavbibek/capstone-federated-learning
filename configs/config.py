@@ -77,22 +77,26 @@ EXPERIMENTS = {
 
     "dp_server_fixed": {
         "attack": None,
+        "defense": "dp_server_fixed",
         "dp": None,
-        "defense": "dp_server_fixed"
+        "noise": 1.0,
+        "clip": 1.0
     },
 
     "dp_server_adaptive": {
         "attack": None,
+        "defense": "dp_server_adaptive",
         "dp": None,
-        "defense": "dp_server_adaptive"
-    },
-
-    "dp_hybrid_adaptive": {
-        "attack": None,
-        "dp": "hybrid_adaptive",  
-        "defense": None,          
         "noise": 1.0,
         "clip": 1.0
+    },
+
+    "dp_local_adaptive": {
+        "attack": None,
+        "dp": "local_adaptive",
+        "noise": 1.0,
+        "clip": 1.0,
+        "defense": None
     },
 
     "final_system": {

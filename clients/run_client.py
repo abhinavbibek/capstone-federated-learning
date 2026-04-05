@@ -11,6 +11,6 @@ exp_name = sys.argv[2]
 exp_config = EXPERIMENTS[exp_name]
 
 fl.client.start_numpy_client(
-    server_address="127.0.0.1:8080",
+    server_address="127.0.0.1:8081",
     client=FLClient(client_id, exp_config)
 )

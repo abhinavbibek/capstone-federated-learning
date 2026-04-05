@@ -186,21 +186,7 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
             selected = krum_aggregation(weights)
             return fl.common.ndarrays_to_parameters(selected), {}
 
-        if self.method == "dp_server_fixed":
-            weights = fixed_clip(weights, clip_norm=5.0)  # fixed threshold
-
-            # 🔒 Add Gaussian noise after aggregation
-            noise_std = 0.01
-
-        elif self.method == "dp_server_adaptive":
-            weights = adaptive_clip(weights)
-
-            # adaptive noise based on variance
-            flat_weights = [np.concatenate([w.flatten() for w in client]) for client in weights]
-            stacked = np.stack(flat_weights)
-
-            variance = np.var(stacked)
-            noise_std = np.sqrt(variance + 1e-6)
+        
 
         # ================= AGGREGATION =================
         aggregated = []
@@ -226,20 +212,6 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
                 )
 
             aggregated.append(agg_layer)
-        # ================= SERVER DP NOISE =================
-        if self.method == "dp_server_fixed":
-            noisy = []
-            for w in aggregated:
-                noise = np.random.normal(0, noise_std, size=w.shape)
-                noisy.append(w + noise)
-            aggregated = noisy
-
-        if self.method == "dp_server_adaptive":
-            noisy = []
-            for w in aggregated:
-                noise = np.random.normal(0, noise_std, size=w.shape)
-                noisy.append(w + noise)
-            aggregated = noisy
 
         # ================= MOMENTUM =================
         if self.prev_weights is not None:
@@ -265,7 +237,7 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
         #     )
 
 
-        if self.use_trust and self.method not in ["dp_server_fixed", "dp_server_adaptive"]:
+        if self.use_trust:
             aggregated = add_adaptive_noise(
                 aggregated,
                 weights,

@@ -31,8 +31,8 @@ def train_with_opacus(model, X, y, epochs, lr, batch_size, noise_multiplier, max
     model.to(device)
     model.train()
 
-    X = torch.FloatTensor(X)
-    y = torch.FloatTensor(y).reshape(-1, 1)
+    X = torch.FloatTensor(X).to(device)
+    y = torch.FloatTensor(y).reshape(-1, 1).to(device)
 
     dataset = TensorDataset(X, y)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -54,89 +54,83 @@ def train_with_opacus(model, X, y, epochs, lr, batch_size, noise_multiplier, max
     )
     # ADD THESE PRINTS ONLY (no logic change)
 
-    
+    base_noise = noise_multiplier
+    base_clip = max_grad_norm
 
     for epoch in range(epochs):
 
-        # 🔥 ANNEALING FACTOR (critical fix)
-        anneal_factor = 1 / (1 + epoch)
-        epoch_noise_vals = []
-        epoch_grad_vals = []
-        epoch_adaptive_vals = []
+        epoch_conf_vals = []
+        epoch_leak_vals = []
+
+        # =========================
+        # 🔥 STEP 1: COMPUTE ADAPTIVE FACTORS (ONCE PER EPOCH)
+        # =========================
+        if adaptive:
+            model.eval()
+
+            with torch.no_grad():
+                # Use small subset for speed (important)
+                indices = torch.randperm(len(X))[:batch_size]
+                sample_x = X[indices].to(device)
+                sample_y = y[indices].to(device)
+
+                preds = model(sample_x)
+                probs = torch.sigmoid(preds)
+
+                # CONFIDENCE
+                entropy = compute_entropy(probs)
+                avg_entropy = torch.mean(entropy)
+                confidence = 1 - avg_entropy.item()
+
+                # LEAKAGE
+                feature = sample_x[:, 0]
+                feature_corr = torch.abs(torch.mean(feature * sample_y.squeeze())).item()
+                leakage = feature_corr / (feature_corr + 1e-6)
+
+            scale_factor = confidence * leakage
+
+            current_noise = base_noise * (0.5 + scale_factor)
+            current_clip = base_clip * (1.0 + scale_factor)
+
+            # clamp
+            current_noise = max(0.5, min(2.0, current_noise))
+            current_clip = max(0.5, min(5.0, current_clip))
+
+            # 🔥 APPLY ONCE PER EPOCH
+            optimizer.noise_multiplier = current_noise
+            optimizer.max_grad_norm = current_clip
+
+        else:
+            current_noise = base_noise
+            current_clip = base_clip
+            confidence = 0.0
+            leakage = 0.0
+
+        model.train()
+
+        # =========================
+        # 🔥 STEP 2: NORMAL TRAINING LOOP (NO ADAPTIVE INSIDE)
+        # =========================
         for batch_x, batch_y in dataloader:
 
             batch_x, batch_y = batch_x.to(device), batch_y.to(device)
-            # 🔒 Leakage regularization (ADD HERE)
-            leak_feature = batch_x[:, 0].unsqueeze(1)
-            batch_x = batch_x - 0.1 * leak_feature
 
             optimizer.zero_grad()
+
             preds = model(batch_x)
-
-            probs = torch.sigmoid(preds)
-
-            # =========================
-            # 🔥 CONFIDENCE (STABLE)
-            # =========================
-            entropy = compute_entropy(probs)
-            avg_entropy = torch.mean(entropy)
-
-            confidence = 1 - avg_entropy
-
-            # 🔥 ANNEALED CONFIDENCE
-            if adaptive:
-                adaptive_noise = noise_multiplier * (0.5 + 0.5 * confidence.item()) * anneal_factor
-            else:
-                adaptive_noise = 0.0
-
-            epoch_adaptive_vals.append(adaptive_noise)
-            
-          
             loss = criterion(preds, batch_y)
+
             loss.backward()
-            # 🔒 Gradient stabilization 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            # 🔥 APPLY YOUR CUSTOM METHOD ONLY IF adaptive=True
-            if adaptive:
-
-                feature = batch_x[:, 0]
-                feature_corr = torch.abs(torch.mean(feature * batch_y.squeeze()))
-                feature_score = feature_corr / (feature_corr + 1e-6)
-                leakage_weight = 1 + feature_score.item()
-
-                for name, param in model.named_parameters():
-
-                    if param.grad is None:
-                        continue
-
-                    grad_norm = torch.norm(param.grad)
-                    scale = 1 / (1 + grad_norm)
-
-                    noise_std = adaptive_noise * scale * leakage_weight
-
-                    # 🔒 Stability bounds
-                    noise_std = float(noise_std)
-                    noise_std = max(0.001, min(0.05, noise_std))
-                    epoch_noise_vals.append(noise_std)
-                    epoch_grad_vals.append(grad_norm.item())
-                    noise = torch.normal(
-                        mean=0,
-                        std=noise_std,
-                        size=param.grad.shape,
-                        device=param.grad.device
-                    )
-
-                    param.grad += noise 
-                    
             optimizer.step()
 
-        noise_mean = np.mean(epoch_noise_vals) if len(epoch_noise_vals) > 0 else 0.0
-        grad_mean = np.mean(epoch_grad_vals) if len(epoch_grad_vals) > 0 else 0.0
-
+        # =========================
+        # 🔥 LOGGING (PER EPOCH)
+        # =========================
         print(f"[DP][Epoch {epoch}] "
-            f"Noise(mean)={noise_mean:.6f} "
-            f"Grad(mean)={grad_mean:.6f} "
-            f"AdaptiveNoise={adaptive_noise:.6f}")
+            f"Noise={current_noise:.4f} "
+            f"Clip={current_clip:.4f} "
+            f"Confidence={confidence:.4f} "
+            f"Leakage={leakage:.4f}")
     epsilon = privacy_engine.get_epsilon(delta=1e-5)
 
     clean_state_dict = {

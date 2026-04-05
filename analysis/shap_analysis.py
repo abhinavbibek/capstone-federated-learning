@@ -8,6 +8,9 @@ import os
 import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
 import os
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # =========================
@@ -68,6 +71,8 @@ def compute_shap(model, X, exp_name, sample_size=100):
         shap_values = explainer.shap_values(X[:sample_size])
 
     shap_values = np.array(shap_values)
+    if len(shap_values.shape) == 3:
+        shap_values = shap_values.squeeze(-1)
 
     global_importance = np.mean(np.abs(shap_values), axis=0)
 
@@ -176,15 +181,17 @@ def explain_single_prediction(model, X, shap_values, idx=0, feature_names=None):
 
     sample = X[idx]
     shap_val = shap_values[idx]
+    # 🔥 Ensure 1D vector (CRITICAL FIX)
+    shap_val = np.array(shap_val).reshape(-1)
 
     top_features = np.argsort(np.abs(shap_val))[-5:]
-    top_features = list(dict.fromkeys(top_features))  # remove duplicates   
+    top_features = list(map(int, top_features))  # ensure hashable ints  
 
     explanation = []
 
     for f in reversed(top_features):
         name = f"feature_{f}" if feature_names is None else feature_names[f]
-        contribution = float(shap_val[f])
+        contribution = float(np.array(shap_val[f]).item())
 
         direction = "increased" if contribution > 0 else "decreased"
 

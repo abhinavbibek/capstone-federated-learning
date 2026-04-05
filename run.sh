@@ -15,37 +15,39 @@ export PYTHONPATH=$(pwd)
 trap "echo 'Cleaning up...' | tee -a $LOG_FILE; pkill -f fl_server; pkill -f run_client; exit" SIGINT
 
 EXPERIMENTS=(
-# "baseline"
+"baseline"
 
 # #attack only
-# "label_flip_only"
-# "targeted_flip_only"
-# "feature_poison_only"
-# "sign_flip_only"
-# "scaling_only"
+"label_flip_only"
+"targeted_flip_only"
+"feature_poison_only"
+"sign_flip_only"
+"scaling_only"
 
 # #attack + defense
-# "label_flip_median" "label_flip_trimmed" "label_flip_krum" "label_flip_clip"
-# "targeted_flip_median" "targeted_flip_trimmed" "targeted_flip_krum" "targeted_flip_clip"
-# "feature_poison_median" "feature_poison_trimmed" "feature_poison_krum" "feature_poison_clip"
-# "sign_flip_median" "sign_flip_trimmed" "sign_flip_krum" "sign_flip_clip"
-# "scaling_median" "scaling_trimmed" "scaling_krum" "scaling_clip"
+"label_flip_median" "label_flip_trimmed" "label_flip_krum" "label_flip_clip"
+"targeted_flip_median" "targeted_flip_trimmed" "targeted_flip_krum" "targeted_flip_clip"
+"feature_poison_median" "feature_poison_trimmed" "feature_poison_krum" "feature_poison_clip"
+"sign_flip_median" "sign_flip_trimmed" "sign_flip_krum" "sign_flip_clip"
+"scaling_median" "scaling_trimmed" "scaling_krum" "scaling_clip"
 
 # #DP experiments
-# "dp_local_eps1" "dp_local_eps2" "dp_local_eps5" "dp_server_fixed" "dp_server_adaptive" "dp_hybrid"
-# "dp_hybrid_adaptive"
+"dp_local_eps1" "dp_local_eps2" "dp_local_eps5" "dp_server_fixed" "dp_server_adaptive" 
+"dp_local_adaptive"
 
-#final system
+# final system experiment
 "final_system"
+
+
 )
 
 
 
 for EXP in "${EXPERIMENTS[@]}"
 do
-    echo "======================================" | tee -a $LOG_FILE
+    echo "==========================================================" | tee -a $LOG_FILE
     echo -e "\n\n==================== $EXP ====================\n" | tee -a $LOG_FILE
-    echo "======================================" | tee -a $LOG_FILE
+    echo "==========================================================" | tee -a $LOG_FILE
 
     # Start server
     python -m server.fl_server $EXP >> $LOG_FILE 2>&1 &
@@ -54,10 +56,26 @@ do
     sleep 10
 
     # Start clients
+    # CLIENT_PIDS=()
+    # for i in {1..10}
+    # do
+    #     python -m clients.run_client $i $EXP >> $LOG_FILE 2>&1 &
+    #     CLIENT_PIDS+=($!)
+    # done
+    
     CLIENT_PIDS=()
+
+    GPU_LIST=(0 1 3)   # 🔥 manually choose from nvidia-smi
+    NUM_GPUS=${#GPU_LIST[@]}
+
     for i in {1..10}
     do
-        python -m clients.run_client $i $EXP >> $LOG_FILE 2>&1 &
+        GPU_ID=${GPU_LIST[$(( (i-1) % NUM_GPUS ))]}
+
+        echo "Client $i → GPU $GPU_ID" | tee -a $LOG_FILE
+
+        CUDA_VISIBLE_DEVICES=$GPU_ID python -m clients.run_client $i $EXP >> $LOG_FILE 2>&1 &
+
         CLIENT_PIDS+=($!)
     done
     wait $SERVER_PID
