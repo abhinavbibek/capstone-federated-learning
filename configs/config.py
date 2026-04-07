@@ -79,7 +79,7 @@ EXPERIMENTS = {
         "attack": None,
         "defense": "dp_server_fixed",
         "dp": None,
-        "noise": 1.0,
+        "noise": 0.1,
         "clip": 1.0
     },
 
@@ -87,7 +87,7 @@ EXPERIMENTS = {
         "attack": None,
         "defense": "dp_server_adaptive",
         "dp": None,
-        "noise": 1.0,
+        "noise": 0.1,
         "clip": 1.0
     },
 
@@ -103,7 +103,7 @@ EXPERIMENTS = {
     "attack": "label_flip",
     "dp": "local",
     "defense": "trust",  
-    "noise": 1.5,
+    "noise": 1.0,
     "clip": 1.0
 }
 }

@@ -32,6 +32,13 @@ def adaptive_clip(weights):
     print(f"[DEBUG] Adaptive clip threshold: {threshold:.4f}")
     return fixed_clip(weights, threshold)
 
+def normalize_updates(weights):
+    normalized = []
+    for client_weights in weights:
+        total_norm = np.sqrt(sum(np.sum(w**2) for w in client_weights))
+        scale = max(total_norm, 1e-6)
+        normalized.append([w / scale for w in client_weights])
+    return normalized
 
 def add_adaptive_noise(aggregated, weights, rnd, trust_scores=None):
     flat_weights = [np.concatenate([w.flatten() for w in client]) for client in weights]
@@ -42,7 +49,7 @@ def add_adaptive_noise(aggregated, weights, rnd, trust_scores=None):
 
     avg_trust = np.mean(trust_scores) if trust_scores is not None else 1.0
 
-    noise_std = np.sqrt(variance + 1e-6) * round_factor * (1 + (1 - avg_trust))
+    noise_std = np.sqrt(variance + 1e-6) * round_factor * (1 + 0.5*(1 - avg_trust))
 
     print(f"[DEBUG] Noise std: {noise_std:.6f} | Variance: {variance:.6f}")
 
@@ -92,15 +99,19 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
             fl.common.parameters_to_ndarrays(fit_res.parameters)
             for _, fit_res in results
         ]
-
+        
         losses = np.array([
             fit_res.metrics.get("loss", 1.0)
             for _, fit_res in results
         ])
 
         print(f"[DEBUG] All client losses: {losses}")
-
-        # ================= ADAPTIVE TOP-K =================
+        # 🔥 DP SERVER FIX — normalize updates
+        if self.method.startswith("dp_server"):
+            weights = normalize_updates(weights)
+        # 🔥 GLOBAL CLIPPING (stability)
+        weights = clip_updates(weights, threshold=5.0)
+        
         mean_loss = np.mean(losses)
         std_loss = np.std(losses)
         threshold = mean_loss + 0.5 * std_loss
@@ -160,28 +171,23 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
 
         # ================= CLASS IMBALANCE FIX =================
 
+        # 🔥 DISABLE imbalance boost (handled at client level)
         if self.dataset == "credit":
+            pass
 
-            fraud_ratios = np.array([
-                fit_res.metrics.get("fraud_ratio", 0.0)
-                for _, fit_res in results
-            ])
-            fraud_ratios = fraud_ratios[selected_idx]
+        # if self.use_trust:
+        #     client_weights = 0.85 * loss_weights + 0.15 * trust_scores
+        # else:
+        #     client_weights = loss_weights
 
-            fraud_ratios = fraud_ratios / (np.sum(fraud_ratios) + 1e-6)
-
-            imbalance_boost = 1 + 1.0 * np.sqrt(fraud_ratios)
-
-            loss_weights = loss_weights * imbalance_boost
-            loss_weights /= np.sum(loss_weights)
-
+        # client_weights /= np.sum(client_weights)
+        # 🔥 SIMPLER + STABLE TRUST INTEGRATION
         if self.use_trust:
-            client_weights = 0.85 * loss_weights + 0.15 * trust_scores
+            client_weights = 0.9 * loss_weights + 0.1 * trust_scores
         else:
             client_weights = loss_weights
 
         client_weights /= np.sum(client_weights)
-
         print(f"[DEBUG] Trust scores: {trust_scores}")
         print(f"[DEBUG] Client weights: {client_weights}")
         # ================= SOFT TRUST-GUIDED FILTERING =================
@@ -195,7 +201,7 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
             combined_score = 0.6 * loss_score + 0.4 * trust_scores
 
             # ---- 3. Adaptive threshold ----
-            threshold_soft = 0.5
+            threshold_soft = np.percentile(combined_score, 30)
 
             # ---- 4. Soft weighting (NO removal) ----
             soft_weights = []
@@ -205,13 +211,13 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
                     soft_weights.append(combined_score[i])
                 else:
                     # ↓ Instead of removing → suppress
-                    soft_weights.append(combined_score[i] * 0.5)
+                    soft_weights.append(combined_score[i] * 0.8)
 
             soft_weights = np.array(soft_weights)
             soft_weights /= (np.sum(soft_weights) + 1e-6)
 
             # ---- 5. Merge with existing weights ----
-            client_weights = 0.5 * client_weights + 0.5 * soft_weights
+            client_weights = 0.7 * client_weights + 0.3 * soft_weights
             client_weights /= (np.sum(client_weights) + 1e-6)
 
             print(f"[DEBUG] Soft weights: {soft_weights}")
@@ -238,7 +244,7 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
         # ================= DEFENSE METHODS =================
 
         if self.method == "clipping":
-            weights = clip_updates(weights)
+            weights = clip_updates(weights, threshold=3.0)
 
         if self.method == "krum":
             selected = krum_aggregation(weights)
@@ -257,10 +263,14 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
 
             elif self.method == "trimmed_mean":
                 n = layer_stack.shape[0]
-                k = int(n * 0.2)
-                sorted_layer = np.sort(layer_stack, axis=0)
-                trimmed = sorted_layer[k:n-k]
-                agg_layer = np.mean(trimmed, axis=0)
+                k = min(int(n * 0.1), (n - 2) // 2)
+
+                if n - 2*k <= 0:
+                    agg_layer = np.mean(layer_stack, axis=0)
+                else:
+                    sorted_layer = np.sort(layer_stack, axis=0)
+                    trimmed = sorted_layer[k:n-k]
+                    agg_layer = np.mean(trimmed, axis=0)
 
             else:
                 reshape_dims = [len(client_weights)] + [1] * (layer_stack.ndim - 1)

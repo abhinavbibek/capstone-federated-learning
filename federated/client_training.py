@@ -7,7 +7,7 @@ import numpy as np
 import torch.nn.functional as F
 
 class FocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2):
+    def __init__(self, alpha=0.75, gamma=2):
         super(FocalLoss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
@@ -18,7 +18,7 @@ class FocalLoss(nn.Module):
         )
         probs = torch.sigmoid(logits)
         pt = torch.where(targets == 1, probs, 1 - probs)
-
+        pt = torch.clamp(pt, min=1e-4, max=1.0)
         focal_weight = self.alpha * (1 - pt) ** self.gamma
         return (focal_weight * bce_loss).mean()
 
@@ -39,7 +39,8 @@ def train_local(model, X, y, epochs, lr, batch_size, dataset):
     pos_weight = pos_weight.to(device)
 
     if dataset == "credit":
-        criterion = FocalLoss(alpha=0.25, gamma=2)
+        alpha = min(0.75, float(pos_weight / (pos_weight + 1)))
+        criterion = FocalLoss(alpha=alpha, gamma=2)
     else:
         criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)

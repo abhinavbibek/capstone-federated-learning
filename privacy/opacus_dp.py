@@ -35,7 +35,7 @@ class FocalLoss(nn.Module):
         )
         probs = torch.sigmoid(logits)
         pt = torch.where(targets == 1, probs, 1 - probs)
-
+        pt = torch.clamp(pt, min=1e-4, max=1.0)
         focal_weight = self.alpha * (1 - pt) ** self.gamma
         return (focal_weight * bce_loss).mean()
 
@@ -94,7 +94,7 @@ def train_with_opacus(model, X, y, epochs, lr, batch_size, noise_multiplier, max
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     if dataset == "credit":
-        criterion = FocalLoss(alpha=0.25, gamma=2)
+        criterion = FocalLoss(alpha=0.75, gamma=2)
     else:
         criterion = nn.BCEWithLogitsLoss()
 

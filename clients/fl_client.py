@@ -8,6 +8,7 @@ import torch.nn as nn
 from models.mlp_model import SimpleMLPModel
 from attacks.label_flipping import label_flip, targeted_label_flip
 from attacks.feature_poisoning import feature_poison
+from federated.client_training import FocalLoss
 from attacks.model_poisoning import sign_flipping, scaling_attack
 from sklearn.preprocessing import StandardScaler
 from configs.config import *
@@ -168,7 +169,10 @@ class FLClient(fl.client.NumPyClient):
         y = torch.FloatTensor(self.y).reshape(-1, 1).to(device)
 
         self.model.eval()
-        criterion = nn.BCEWithLogitsLoss()
+        if self.dataset == "credit":
+            criterion = FocalLoss(alpha=0.75, gamma=2)
+        else:
+            criterion = nn.BCEWithLogitsLoss()
 
         with torch.no_grad():
             logits = self.model(X)
