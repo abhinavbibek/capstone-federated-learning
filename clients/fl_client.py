@@ -11,19 +11,21 @@ from attacks.feature_poisoning import feature_poison
 from attacks.model_poisoning import sign_flipping, scaling_attack
 from sklearn.preprocessing import StandardScaler
 from configs.config import *
+from sklearn.metrics import f1_score, roc_auc_score, precision_score, recall_score
 from federated.client_training import train_local
 from privacy.opacus_dp import train_with_opacus
 from utils.seed import set_seed
 import logging
 logging.getLogger("flwr").setLevel(logging.ERROR)
 set_seed(SEED)
-#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cpu")
 
 
 
 class FLClient(fl.client.NumPyClient):
-    def __init__(self, client_id, exp_config):
+    def __init__(self, client_id, exp_config, dataset):
+        self.dataset = dataset
         self.exp_config = exp_config
         self.client_id = client_id
         self.X, self.y = self.load_data()
@@ -36,10 +38,11 @@ class FLClient(fl.client.NumPyClient):
 
 
     def load_data(self):
-        with open(f"data/client_{self.client_id}.pkl", "rb") as f:
+
+        with open(f"data/{self.dataset}_client_{self.client_id}.pkl", "rb") as f:
             data = pickle.load(f)
 
-        with open("data/global_scaler.pkl", "rb") as f:
+        with open(f"data/{self.dataset}_global_scaler.pkl", "rb") as f:
             scaler = pickle.load(f)
 
         X_raw = data["X"]
@@ -77,7 +80,7 @@ class FLClient(fl.client.NumPyClient):
         if is_attacker:
 
             if attack_type == "label_flip":
-                y = label_flip(y)
+                y = label_flip(y, flip_ratio=0.3)
 
             elif attack_type == "targeted_flip":
                 y = targeted_label_flip(y)
@@ -112,7 +115,8 @@ class FLClient(fl.client.NumPyClient):
                 BATCH_SIZE,
                 noise,
                 clip,
-                adaptive=is_adaptive   # 🔥 ONLY CHANGE
+                adaptive=is_adaptive,   # 🔥 ONLY CHANGE
+                dataset=self.dataset
             )
 
         else:
@@ -122,7 +126,8 @@ class FLClient(fl.client.NumPyClient):
                 y,
                 LOCAL_EPOCHS,
                 LEARNING_RATE,
-                BATCH_SIZE
+                BATCH_SIZE,
+                dataset=self.dataset
             )
             epsilon = 0.0
 
@@ -146,26 +151,50 @@ class FLClient(fl.client.NumPyClient):
             print(f"[Client {self.client_id}] benign | Loss={loss:.4f}")
 
         weights_ndarrays = [val.cpu().numpy() for val in weights.values()]
-
+        fraud_ratio = np.mean(y)
         return weights_ndarrays, len(self.X), {
             "loss": float(loss),
-            "epsilon": float(epsilon)
+            "epsilon": float(epsilon),
+            "fraud_ratio": float(fraud_ratio),
+            "client_id": self.client_id   # 🔥 ADD
         }
 
 
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
         self.model.to(device)
+
         X = torch.FloatTensor(self.X).to(device)
         y = torch.FloatTensor(self.y).reshape(-1, 1).to(device)
 
         self.model.eval()
         criterion = nn.BCEWithLogitsLoss()
 
-        logits = self.model(X)
-        loss = criterion(logits, y).item()
+        with torch.no_grad():
+            logits = self.model(X)
+            loss = criterion(logits, y).item()
 
-        probs = torch.sigmoid(logits)
-        acc = ((probs > 0.5) == y).float().mean().item()
+            probs = torch.sigmoid(logits)
 
-        return loss, len(self.X), {"accuracy": acc}
+        y_true = y.cpu().numpy().ravel()
+        y_pred = (probs > 0.5).cpu().numpy().ravel()
+        print("Predicted positives:", np.sum(y_pred))
+        y_prob = probs.cpu().numpy().ravel()
+
+        acc = (y_pred == y_true).mean()
+        f1 = f1_score(y_true, y_pred)
+        precision = precision_score(y_true, y_pred)
+        recall = recall_score(y_true, y_pred)
+
+        try:
+            auc = roc_auc_score(y_true, y_prob)
+        except:
+            auc = 0.0
+
+        return loss, len(self.X), {
+            "accuracy": acc,
+            "f1": f1,
+            "auc": auc,
+            "precision" : precision,
+            "recall" : recall
+        }

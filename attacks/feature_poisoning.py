@@ -1,17 +1,19 @@
 #attacks/feature_poisoning.py
 import numpy as np
 
-def feature_poison(X, severity=50.0):
+def feature_poison(X, severity=None, flip_prob=0.3):
     X = X.copy()
 
-    # poison top important features aggressively
-    important_features = list(range(20))  # more features
+    # Auto severity based on standardized data
+    if severity is None:
+        severity = 0.3   # better default for scaled features
 
-    for f in important_features:
-        noise = np.random.normal(0, severity, size=X.shape[0])
-        X[:, f] += noise
+    num_features = X.shape[1]
+    selected = np.random.choice(num_features, size=int(num_features * 0.3), replace=False)
 
-    # add distribution shift
-    X *= np.random.uniform(1.5, 3.0)
+    for f in selected:
+        mask = np.random.rand(X.shape[0]) < flip_prob
+        noise = np.random.normal(0, severity, size=np.sum(mask))
+        X[mask, f] += noise
 
     return X

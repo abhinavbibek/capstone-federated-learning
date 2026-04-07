@@ -1,11 +1,13 @@
 #privacy/opacus_dp.py
 
 import torch
+import torch.nn as nn
 import copy
 from torch.utils.data import DataLoader, TensorDataset
 from opacus import PrivacyEngine
 import warnings
 import numpy as np
+from torch.utils.data import WeightedRandomSampler
 
 # Suppress Opacus warning
 warnings.filterwarnings(
@@ -19,11 +21,29 @@ warnings.filterwarnings(
     message="Full backward hook is firing"
 )
 
+import torch.nn.functional as F
+
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+
+    def forward(self, logits, targets):
+        bce_loss = F.binary_cross_entropy_with_logits(
+            logits, targets, reduction='none'
+        )
+        probs = torch.sigmoid(logits)
+        pt = torch.where(targets == 1, probs, 1 - probs)
+
+        focal_weight = self.alpha * (1 - pt) ** self.gamma
+        return (focal_weight * bce_loss).mean()
+
 def compute_entropy(probs):
     return - (probs * torch.log(probs + 1e-8) + (1 - probs) * torch.log(1 - probs + 1e-8))
 
 
-def train_with_opacus(model, X, y, epochs, lr, batch_size, noise_multiplier, max_grad_norm, adaptive=False):
+def train_with_opacus(model, X, y, epochs, lr, batch_size, noise_multiplier, max_grad_norm, adaptive=False, dataset=None ):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -34,13 +54,49 @@ def train_with_opacus(model, X, y, epochs, lr, batch_size, noise_multiplier, max
     X = torch.FloatTensor(X).to(device)
     y = torch.FloatTensor(y).reshape(-1, 1).to(device)
 
-    dataset = TensorDataset(X, y)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    train_dataset = TensorDataset(X, y)
+
+    # =========================
+    # 🔥 BALANCED SAMPLER (ONLY CREDIT)
+    # =========================
+    if dataset == "credit":
+        y_np = y.cpu().numpy().astype(int).ravel()
+
+        class_counts = np.bincount(y_np)
+        weights = 1.0 / (class_counts + 1e-6)
+
+        sample_weights = weights[y_np]
+
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True
+        )
+
+        dataloader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            sampler=sampler
+        )
+
+        prior = torch.mean(y).item()
+        prior = max(min(prior, 0.95), 0.05)
+
+    else:
+        dataloader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True
+        )
+
+        prior = None
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    # criterion = torch.nn.BCEWithLogitsLoss()
-    pos_weight = (len(y) - y.sum()) / (y.sum() + 1e-6)
-    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(device))
+
+    if dataset == "credit":
+        criterion = FocalLoss(alpha=0.25, gamma=2)
+    else:
+        criterion = nn.BCEWithLogitsLoss()
 
     privacy_engine = PrivacyEngine()
     
@@ -117,20 +173,14 @@ def train_with_opacus(model, X, y, epochs, lr, batch_size, noise_multiplier, max
 
             optimizer.zero_grad()
 
-            preds = model(batch_x)
-            loss = criterion(preds, batch_y)
+            logits = model(batch_x)
+
+            loss = criterion(logits, batch_y)
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
 
-        # =========================
-        # 🔥 LOGGING (PER EPOCH)
-        # =========================
-        print(f"[DP][Epoch {epoch}] "
-            f"Noise={current_noise:.4f} "
-            f"Clip={current_clip:.4f} "
-            f"Confidence={confidence:.4f} "
-            f"Leakage={leakage:.4f}")
     epsilon = privacy_engine.get_epsilon(delta=1e-5)
 
     clean_state_dict = {

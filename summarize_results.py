@@ -4,39 +4,54 @@ import pandas as pd
 
 RESULTS_DIR = "results"
 
-rows = []
+# Target rounds
+TARGET_ROUNDS = [0, 2, 5, 8, 10]
+
+# Store results per round
+round_data = {r: [] for r in TARGET_ROUNDS}
 
 for file in os.listdir(RESULTS_DIR):
-    #if file.startswith("dp_") and file.endswith(".json"):
-    if file.endswith(".json"):
+
+    if file.startswith("credit") and file.endswith(".json"):
         path = os.path.join(RESULTS_DIR, file)
 
         with open(path, "r") as f:
             data = json.load(f)
 
-        final_round = data[-1]  # last round
+        # Convert list → dict by round for fast lookup
+        round_dict = {entry["round"]: entry for entry in data}
 
-        rows.append({
-            "experiment": file.replace(".json", ""),
-            "accuracy": round(final_round["accuracy"], 4),
-            "f1": round(final_round["f1"], 4),
-            "auc": round(final_round["auc"], 4),
-            "leakage": round(final_round["leakage"], 4),
-            "loss": round(final_round["loss"], 4),
-            "asr": round(final_round["asr"], 4),
-            "epsilon": round(final_round["epsilon"], 4),
-            "mia": round(final_round["mia"], 4),
-            "confidence_gap": round(final_round["confidence_gap"], 4),
-            "entropy": round(final_round["entropy"], 4),
-        })
+        for r in TARGET_ROUNDS:
+            if r in round_dict:
+                entry = round_dict[r]
 
-# Convert to DataFrame
-df = pd.DataFrame(rows)
+                round_data[r].append({
+                    "experiment": file.replace(".json", ""),
+                    "accuracy": round(entry.get("accuracy", 0), 4),
+                    "f1": round(entry.get("f1", 0), 4),
+                    "auc": round(entry.get("auc", 0), 4),
+                    "leakage": round(entry.get("leakage", 0), 4),
+                    "loss": round(entry.get("loss", 0), 4),
+                    "asr": round(entry.get("asr", 0), 4),
+                    "epsilon": round(entry.get("epsilon", 0), 4),
+                    "mia": round(entry.get("mia", 0), 4),
+                    "confidence_gap": round(entry.get("confidence_gap", 0), 4),
+                    "entropy": round(entry.get("entropy", 0), 4),
+                })
 
-# Sort nicely
-df = df.sort_values(by="experiment")
+# ==============================
+# SAVE CSVs PER ROUND
+# ==============================
+for r in TARGET_ROUNDS:
+    df = pd.DataFrame(round_data[r])
 
-# Save table
-df.to_csv("results_summary_all.csv", index=False)
+    if not df.empty:
+        df = df.sort_values(by="experiment")
 
-print(df)
+        filename = f"results_summary_credit_round_{r}.csv"
+        df.to_csv(filename, index=False)
+
+        print(f"\nSaved: {filename}")
+        print(df)
+    else:
+        print(f"\nNo data found for round {r}")

@@ -101,7 +101,7 @@ EXPERIMENTS = {
 
     "final_system": {
     "attack": "label_flip",
-    "dp": "local_adaptive",
+    "dp": "local",
     "defense": "trust",  
     "noise": 1.5,
     "clip": 1.0

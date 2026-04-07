@@ -1,7 +1,0 @@
-experiment,accuracy,f1,auc,leakage
-dp_hybrid_adaptive,0.7807,0.6557,0.8869,0.6522
-dp_local_eps1,0.7747,0.6506,0.8861,0.6463
-dp_local_eps2,0.7905,0.6642,0.8902,0.6537
-dp_local_eps5,0.7974,0.6712,0.8933,0.6597
-dp_server_adaptive,0.8086,0.6736,0.8933,0.6519
-dp_server_fixed,0.8084,0.6733,0.8944,0.6541

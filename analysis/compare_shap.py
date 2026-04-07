@@ -3,7 +3,10 @@
 from analysis.shap_analysis import compare_experiments, load_shap, load_test_data
 from models.mlp_model import SimpleMLPModel
 import torch
+import sys
 from analysis.shap_analysis import privacy_interpretability_tradeoff
+
+dataset = sys.argv[1]
 
 # =========================
 # DEFINE GROUPS
@@ -47,7 +50,7 @@ SELECTED_EXPERIMENTS = [
 # LOAD DATA
 # =========================
 
-X, _ = load_test_data()
+X, _ = load_test_data(dataset)
 
 def interpret_attack(result):
     print("\n[ATTACK INTERPRETABILITY EFFECT]")
@@ -75,13 +78,14 @@ def evaluate_group(group_name, experiments):
     for exp in experiments:
         try:
             model = SimpleMLPModel(X.shape[1])
-            model.load_state_dict(torch.load(f"results/{exp}_model.pt"))
+            model.load_state_dict(torch.load(f"results/{dataset}_{exp}_model.pt"))
 
             result = compare_experiments(
                 base_exp="baseline",
                 other_exp=exp,
                 model=model,
-                X=X
+                X=X,
+                dataset=dataset
             )
 
             print(f"\n--- {exp} vs baseline ---")
@@ -105,7 +109,7 @@ def evaluate_group(group_name, experiments):
                     print("High distortion")
             
 
-            tradeoff = privacy_interpretability_tradeoff(exp)
+            tradeoff = privacy_interpretability_tradeoff(exp, dataset)
 
         except Exception as e:
             print(f"[ERROR] {exp} failed: {e}")
@@ -125,13 +129,14 @@ print("\n\n========== SELECTED EXPERIMENTS ==========")
 for exp in SELECTED_EXPERIMENTS:
     try:
         model = SimpleMLPModel(X.shape[1])
-        model.load_state_dict(torch.load(f"results/{exp}_model.pt"))
+        model.load_state_dict(torch.load(f"results/{dataset}_{exp}_model.pt"))
 
         result = compare_experiments(
             base_exp="baseline",
             other_exp=exp,
             model=model,
-            X=X
+            X=X,
+            dataset=dataset
         )
 
         print(f"\n--- {exp} vs baseline ---")
@@ -146,7 +151,7 @@ for exp in SELECTED_EXPERIMENTS:
             interpret_dp(result)
 
         # 🔥 TRADEOFF
-        tradeoff = privacy_interpretability_tradeoff(exp)
+        tradeoff = privacy_interpretability_tradeoff(exp, dataset)
 
     except Exception as e:
         print(f"[ERROR] {exp} failed: {e}")

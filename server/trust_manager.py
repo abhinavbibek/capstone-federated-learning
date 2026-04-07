@@ -107,12 +107,16 @@ class TrustManager:
         cons_arr = np.array([consistency[cid] for cid in client_ids])
 
         dist_arr = (dist_arr - np.mean(dist_arr)) / (np.std(dist_arr) + 1e-6)
-        dist_score = np.exp(-dist_arr)
+        # dist_score = np.exp(-dist_arr)
+        # cons_score = (cons_arr + 1) / 2
+
+        # trust = 0.6 * dist_score + 0.4 * cons_score
+        # trust = trust / (np.sum(trust) + 1e-6)
+        dist_score = np.exp(-dist_arr)  # smoother, bounded
         cons_score = (cons_arr + 1) / 2
 
-        trust = 0.6 * dist_score + 0.4 * cons_score
+        trust = 0.5 * dist_score + 0.5 * cons_score
         trust = trust / (np.sum(trust) + 1e-6)
-
         # Update memory
         self.prev_updates = flat_updates.copy()
 

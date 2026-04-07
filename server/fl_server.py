@@ -23,15 +23,17 @@ from analysis.shap_analysis import run_shap_analysis
 logging.getLogger("flwr").setLevel(logging.ERROR)
 set_seed(SEED)
 
+exp_name = sys.argv[1]
+dataset = sys.argv[2]
 
 
-def get_eval_fn(exp_name):
+def get_eval_fn(exp_name, dataset):
     history = []
-    with open("data/global_scaler.pkl", "rb") as f:
+    with open(f"data/{dataset}_global_scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
     
     # ===== LOAD TRAIN DATA (for privacy metrics) =====
-    with open('data/train.pkl', 'rb') as f:
+    with open(f'data/{dataset}_train.pkl', 'rb') as f:
         train_data = pickle.load(f)
     exp_config = EXPERIMENTS[exp_name]
     attack_type = exp_config.get("attack", None)
@@ -43,7 +45,7 @@ def get_eval_fn(exp_name):
 
     X_train = torch.tensor(X_train_scaled.astype('float32'))
     y_train = torch.FloatTensor(train_data['y']).view(-1, 1)
-    with open('data/test.pkl', 'rb') as f:
+    with open(f'data/{dataset}_test.pkl', 'rb') as f:
         data = pickle.load(f)
     
     X_raw = data['X']
@@ -169,9 +171,18 @@ def get_eval_fn(exp_name):
             leakage = leakage_score(probs.cpu().numpy().ravel(), X.cpu().numpy())
 
             y_true = y.cpu().numpy().ravel()
-            y_pred = (probs > 0.5).cpu().numpy().ravel()
-            asr = compute_asr(y_true, y_pred, attack_type)
             y_prob = probs.cpu().numpy().ravel()
+            print("Mean prob:", np.mean(y_prob))
+            #threshold = 0.3 if dataset == "credit" else 0.5
+            if dataset == "credit":
+                threshold = np.percentile(y_prob, 99.5)  # adaptive
+            else:
+                threshold = 0.5
+
+            y_pred = (probs > threshold).cpu().numpy().ravel()
+            print("Predicted positives:", np.sum(y_pred))
+            asr = compute_asr(y_true, y_pred, attack_type)
+            
             
             privacy_metrics = compute_privacy_metrics(
                 model,
@@ -215,7 +226,7 @@ def get_eval_fn(exp_name):
             "confidence_gap": privacy_metrics["confidence_gap"],
             "entropy": privacy_metrics["entropy"]
         })
-        with open(f"results/{exp_name}.json", "w") as f:
+        with open(f"results/{dataset}_{exp_name}.json", "w") as f:
             json.dump(history, f, indent=4)
 
         # Detect last round
@@ -247,15 +258,13 @@ def get_eval_fn(exp_name):
         if server_round == ROUNDS:
 
             print("\n[INFO] Running SHAP analysis...")
-
-            torch.save(model.state_dict(), f"results/{exp_name}_model.pt")
-            run_shap_analysis(exp_name, model)
+            torch.save(model.state_dict(), f"results/{dataset}_{exp_name}_model.pt")
+            run_shap_analysis(exp_name, model, dataset)
 
             try:
                 from analysis.shap_analysis import load_shap, shap_drift
-
-                base_vals, base_global = load_shap("baseline")
-                curr_vals, curr_global = load_shap(exp_name)
+                base_vals, base_global = load_shap("baseline", dataset)
+                curr_vals, curr_global = load_shap(exp_name, dataset)
 
                 drift = shap_drift(base_global, curr_global)
 
@@ -281,7 +290,7 @@ if __name__ == "__main__":
         print("Using DP Server Fixed (Flower)")
 
         base_strategy = fl.server.strategy.FedAvg(
-            evaluate_fn=get_eval_fn(exp_name),
+            evaluate_fn=get_eval_fn(exp_name, dataset),
             fraction_fit=1.0,
             min_fit_clients=NUM_CLIENTS,
             min_available_clients=NUM_CLIENTS,
@@ -301,7 +310,7 @@ if __name__ == "__main__":
         print("Using DP Server Adaptive (Flower)")
 
         base_strategy = fl.server.strategy.FedAvg(
-            evaluate_fn=get_eval_fn(exp_name),
+            evaluate_fn=get_eval_fn(exp_name, dataset),
             fraction_fit=1.0,
             min_fit_clients=NUM_CLIENTS,
             min_available_clients=NUM_CLIENTS,
@@ -322,7 +331,8 @@ if __name__ == "__main__":
 
         strategy = RobustFedAvg(
             method=defense,
-            evaluate_fn=get_eval_fn(exp_name),
+            dataset=dataset,
+            evaluate_fn=get_eval_fn(exp_name, dataset),
             fraction_fit=1.0,
             min_fit_clients=NUM_CLIENTS,
             min_available_clients=NUM_CLIENTS,
@@ -335,7 +345,7 @@ if __name__ == "__main__":
         print("Using Standard FedAvg")
 
         strategy = fl.server.strategy.FedAvg(
-            evaluate_fn=get_eval_fn(exp_name),
+            evaluate_fn=get_eval_fn(exp_name, dataset),
             fraction_fit=1.0,
             min_fit_clients=NUM_CLIENTS,
             min_available_clients=NUM_CLIENTS,

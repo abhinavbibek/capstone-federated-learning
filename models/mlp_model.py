@@ -1,3 +1,4 @@
+#models/mlp_model.py
 """
 Simple MLP model for federated learning on UCI Adult dataset
 Architecture: Input -> 64 neurons -> ReLU -> Output (binary classification)

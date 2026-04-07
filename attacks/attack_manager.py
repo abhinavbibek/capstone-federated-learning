@@ -8,7 +8,7 @@ from attacks.model_poisoning import sign_flipping, scaling_attack
 def apply_data_poisoning(X, y, attack_type):
     
     if attack_type == "label_flip":
-        y = label_flip(y)
+        y = label_flip(y, flip_ratio=0.3)
 
     elif attack_type == "targeted_flip":
         y = targeted_label_flip(y)

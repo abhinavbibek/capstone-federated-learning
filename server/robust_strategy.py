@@ -69,9 +69,10 @@ def clip_updates(weights, threshold=5.0):
 
 class RobustFedAvg(fl.server.strategy.FedAvg):
 
-    def __init__(self, method="median", **kwargs):
+    def __init__(self, method="median", dataset="adult", **kwargs):
         super().__init__(**kwargs)
         self.method = method
+        self.dataset = dataset   # 🔥 ADD THIS
 
         # 🔥 TRUST FLAG (ONLY activates for final system)
         self.use_trust = (method == "trust")
@@ -103,21 +104,29 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
         mean_loss = np.mean(losses)
         std_loss = np.std(losses)
         threshold = mean_loss + 0.5 * std_loss
+        # 🔥 DO NOT REMOVE CLIENTS
+        selected_idx = np.arange(len(losses))   # keep all clients
+        print(f"[DEBUG] Soft threshold (not used for removal): {threshold:.4f}")
 
-        selected_idx = np.where(losses <= threshold)[0]
 
-        if len(selected_idx) < len(losses) // 2:
-            print("[DEBUG] Fallback triggered")
-            selected_idx = np.argsort(losses)[:len(losses)//2]
 
-        print(f"[DEBUG] Selected clients: {selected_idx}")
+        # selected_idx = np.where(losses <= threshold)[0]
 
-        weights = [weights[i] for i in selected_idx]
-        losses = losses[selected_idx]
+        # if len(selected_idx) < len(losses) // 2:
+        #     print("[DEBUG] Fallback triggered")
+        #     selected_idx = np.argsort(losses)[:len(losses)//2]
+
+        # print(f"[DEBUG] Selected clients: {selected_idx}")
+
+        # weights = [weights[i] for i in selected_idx]
+        # losses = losses[selected_idx]
 
         # ================= TRUST =================
         if self.use_trust:
-            client_ids = [client.cid for client, _ in results]  # 🔥 ADD THIS LINE
+            client_ids = [
+                fit_res.metrics["client_id"]
+                for _, fit_res in results
+            ]# 🔥 ADD THIS LINE
             client_ids = [client_ids[i] for i in selected_idx]  # 🔥 MATCH FILTERED CLIENTS
 
             trust_scores = self.trust_manager.compute_trust(client_ids, weights)
@@ -125,32 +134,49 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
             trust_scores = np.ones(len(weights)) / len(weights)
         
         # --- TRUST FILTERING ---
-        if self.use_trust and rnd > 2:   # 🔥 ADD CONDITION + WARMUP
+        # if self.use_trust and rnd > 2:   # 🔥 ADD CONDITION + WARMUP
 
-            trust_threshold = np.percentile(trust_scores, 10)
+        #     trust_threshold = np.percentile(trust_scores, 10)
 
-            mask = trust_scores > trust_threshold
+        #     mask = trust_scores > trust_threshold
 
-            filtered_weights = [w for w, m in zip(weights, mask) if m]
-            filtered_losses = [l for l, m in zip(losses, mask) if m]
-            filtered_trust = trust_scores[mask]
+        #     filtered_weights = [w for w, m in zip(weights, mask) if m]
+        #     filtered_losses = [l for l, m in zip(losses, mask) if m]
+        #     filtered_trust = trust_scores[mask]
 
-            num_removed = len(weights) - len(filtered_weights)
-            print(f"[TRUST] Filtered {num_removed} clients")
+        #     num_removed = len(weights) - len(filtered_weights)
+        #     print(f"[TRUST] Filtered {num_removed} clients")
 
-            # Apply only if not empty
-            if len(filtered_weights) > 0:
-                weights = filtered_weights
-                losses = np.array(filtered_losses)
-                trust_scores = filtered_trust
+        #     # Apply only if not empty
+        #     if len(filtered_weights) > 0:
+        #         weights = filtered_weights
+        #         losses = np.array(filtered_losses)
+        #         trust_scores = filtered_trust
 
 
         # ================= CLIENT WEIGHTS =================
         loss_weights = np.exp(-losses)
         loss_weights /= np.sum(loss_weights)
 
+        # ================= CLASS IMBALANCE FIX =================
+
+        if self.dataset == "credit":
+
+            fraud_ratios = np.array([
+                fit_res.metrics.get("fraud_ratio", 0.0)
+                for _, fit_res in results
+            ])
+            fraud_ratios = fraud_ratios[selected_idx]
+
+            fraud_ratios = fraud_ratios / (np.sum(fraud_ratios) + 1e-6)
+
+            imbalance_boost = 1 + 1.0 * np.sqrt(fraud_ratios)
+
+            loss_weights = loss_weights * imbalance_boost
+            loss_weights /= np.sum(loss_weights)
+
         if self.use_trust:
-            client_weights = 0.5 * loss_weights + 0.5 * trust_scores
+            client_weights = 0.85 * loss_weights + 0.15 * trust_scores
         else:
             client_weights = loss_weights
 
@@ -158,6 +184,38 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
 
         print(f"[DEBUG] Trust scores: {trust_scores}")
         print(f"[DEBUG] Client weights: {client_weights}")
+        # ================= SOFT TRUST-GUIDED FILTERING =================
+        if self.use_trust:
+
+            # ---- 1. Normalize loss (safe scaling) ----
+            loss_norm = (losses - np.min(losses)) / (np.max(losses) - np.min(losses) + 1e-6)
+            loss_score = np.exp(-loss_norm)
+
+            # ---- 2. Combine trust + loss ----
+            combined_score = 0.6 * loss_score + 0.4 * trust_scores
+
+            # ---- 3. Adaptive threshold ----
+            threshold_soft = 0.5
+
+            # ---- 4. Soft weighting (NO removal) ----
+            soft_weights = []
+
+            for i in range(len(weights)):
+                if combined_score[i] >= threshold_soft:
+                    soft_weights.append(combined_score[i])
+                else:
+                    # ↓ Instead of removing → suppress
+                    soft_weights.append(combined_score[i] * 0.5)
+
+            soft_weights = np.array(soft_weights)
+            soft_weights /= (np.sum(soft_weights) + 1e-6)
+
+            # ---- 5. Merge with existing weights ----
+            client_weights = 0.5 * client_weights + 0.5 * soft_weights
+            client_weights /= (np.sum(client_weights) + 1e-6)
+
+            print(f"[DEBUG] Soft weights: {soft_weights}")
+            print(f"[DEBUG] Final adjusted weights: {client_weights}")
 
         # # ================= TRUST FILTERING (ONLY FINAL SYSTEM) =================
         # if self.use_trust:
@@ -215,7 +273,7 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
 
         # ================= MOMENTUM =================
         if self.prev_weights is not None:
-            momentum = 0.6
+            momentum = 0.0
             aggregated = [
                 momentum * prev + (1 - momentum) * curr
                 for prev, curr in zip(self.prev_weights, aggregated)
@@ -236,14 +294,6 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
         #         trust_scores if len(trust_scores) == len(weights) else None
         #     )
 
-
-        if self.use_trust:
-            aggregated = add_adaptive_noise(
-                aggregated,
-                weights,
-                rnd,
-                trust_scores if len(trust_scores) == len(weights) else None
-            )
         parameters = fl.common.ndarrays_to_parameters(aggregated)
 
         epsilons = [

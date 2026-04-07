@@ -17,11 +17,12 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 # LOAD MODEL + DATA
 # =========================
 
-def load_test_data():
-    with open("data/test.pkl", "rb") as f:
+def load_test_data(dataset):
+
+    with open(f"data/{dataset}_test.pkl", "rb") as f:
         data = pickle.load(f)
 
-    with open("data/global_scaler.pkl", "rb") as f:
+    with open(f"data/{dataset}_global_scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
 
     X_raw = data["X"]
@@ -135,17 +136,16 @@ def prediction_explanation_consistency(model, X, shap_values):
 # SAVE / LOAD
 # =========================
 
-def save_shap(exp_name, shap_values, global_importance):
+def save_shap(exp_name, shap_values, global_importance, dataset):
     os.makedirs("results/shap", exist_ok=True)
 
-    np.save(f"results/shap/{exp_name}_shap.npy", shap_values)
-    np.save(f"results/shap/{exp_name}_global.npy", global_importance)
+    np.save(f"results/shap/{dataset}_{exp_name}_shap.npy", shap_values)
+    np.save(f"results/shap/{dataset}_{exp_name}_global.npy", global_importance)
 
 
-def load_shap(exp_name):
-    shap_values = np.load(f"results/shap/{exp_name}_shap.npy")
-    global_importance = np.load(f"results/shap/{exp_name}_global.npy")
-
+def load_shap(exp_name, dataset):
+    shap_values = np.load(f"results/shap/{dataset}_{exp_name}_shap.npy")
+    global_importance = np.load(f"results/shap/{dataset}_{exp_name}_global.npy")
     return shap_values, global_importance
 
 
@@ -153,10 +153,10 @@ def load_shap(exp_name):
 # COMPARISON PIPELINE
 # =========================
 
-def compare_experiments(base_exp, other_exp, model, X):
+def compare_experiments(base_exp, other_exp, model, X, dataset):
     
-    shap_vals, other_global = load_shap(other_exp)
-    base_vals, base_global = load_shap(base_exp)
+    shap_vals, other_global = load_shap(other_exp, dataset)
+    base_vals, base_global = load_shap(base_exp, dataset)
     
 
     results = {
@@ -201,17 +201,17 @@ def explain_single_prediction(model, X, shap_values, idx=0, feature_names=None):
 
     return explanation
 
-def privacy_interpretability_tradeoff(exp_name):
+def privacy_interpretability_tradeoff(exp_name, dataset):
     import json
 
-    with open(f"results/{exp_name}.json") as f:
+    with open(f"results/{dataset}_{exp_name}.json") as f:
         history = json.load(f)
 
     final = history[-1]
     leakage = final["leakage"]
 
-    shap_vals, global_vals = load_shap(exp_name)
-    base_vals, base_global = load_shap("baseline")
+    shap_vals, global_vals = load_shap(exp_name, dataset)
+    base_vals, base_global = load_shap("baseline", dataset)
 
     result = {
         "spearman": spearman_corr(base_global, global_vals),
@@ -230,21 +230,22 @@ def privacy_interpretability_tradeoff(exp_name):
 # MAIN RUN FUNCTION
 # =========================
 
-def run_shap_analysis(exp_name, model):
-    
 
-    X, y = load_test_data()
+def run_shap_analysis(exp_name, model, dataset):
+
+    X, y = load_test_data(dataset)
+
 
     shap_values, global_importance = compute_shap(model, X, exp_name)
 
-    save_shap(exp_name, shap_values, global_importance)
+    save_shap(exp_name, shap_values, global_importance, dataset)
 
     print(f"[SHAP] Saved for {exp_name}")
     
     plt.figure()
     X_sample = X[:shap_values.shape[0]]
     shap.summary_plot(shap_values, X_sample, show=False)
-    plt.savefig(f"results/shap/{exp_name}_summary.png")
+    plt.savefig(f"results/shap/{dataset}_{exp_name}_summary.png")
     plt.close()
     explanation = explain_single_prediction(model, X, shap_values, idx=0)
 

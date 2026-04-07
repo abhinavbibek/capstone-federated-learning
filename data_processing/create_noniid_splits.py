@@ -56,18 +56,20 @@ if DATASET == "adult":
     ]
 
 elif DATASET == "credit":
-    # MUCH MORE EXTREME (fraud ≈ 0.17%)
+    # REALISTIC + CONTROLLED NON-IID
     distributions = [
+        (0.998, 0.002),  # very low fraud
+        (0.997, 0.003),
+        (0.996, 0.004),
         (0.995, 0.005),
-        (0.99, 0.01),
-        (0.98, 0.02),
-        (0.97, 0.03),
-        (0.95, 0.05),
-        (0.93, 0.07),
-        (0.90, 0.10),
-        (0.85, 0.15),
-        (0.80, 0.20),
-        (0.90, 0.10),
+
+        (0.993, 0.007),  # medium
+        (0.990, 0.010),
+        (0.985, 0.015),
+
+        (0.980, 0.020),  # higher (but still realistic)
+        (0.975, 0.025),
+        (0.970, 0.030),
     ]
 
 # ==============================
@@ -80,17 +82,19 @@ for i, (ratio0, ratio1) in enumerate(distributions):
     n0 = int(samples_per_client * ratio0)
     n1 = int(samples_per_client * ratio1)
 
-    def sample_with_replacement(arr, n):
+    def sample_safe(arr, n):
         if len(arr) == 0:
             return np.array([], dtype=int)
 
         if len(arr) >= n:
             return np.random.choice(arr, n, replace=False)
         else:
-            return np.random.choice(arr, n, replace=True)
+            # instead of heavy duplication → take all + slight resample
+            extra = np.random.choice(arr, n - len(arr), replace=True)
+            return np.concatenate([arr, extra])
 
-    client_idx0 = sample_with_replacement(splits_class0[i], n0)
-    client_idx1 = sample_with_replacement(splits_class1[i], n1)
+    client_idx0 = sample_safe(splits_class0[i], n0)
+    client_idx1 = sample_safe(splits_class1[i], n1)
 
     client_indices = np.concatenate([client_idx0, client_idx1])
     np.random.shuffle(client_indices)
