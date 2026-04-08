@@ -7,7 +7,6 @@ def label_flip(y, flip_ratio=0.3):
     y[mask] = 1 - y[mask]
     return y
 
-# Targeted flipping (ONLY flip 1 → 0)
 def targeted_label_flip(y):
     y = y.copy()
     y[y == 1] = 0

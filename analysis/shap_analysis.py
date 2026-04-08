@@ -1,24 +1,30 @@
-# analysis/shap_analysis.py
-
+#analysis/shap_analysis.py
 import torch
 import numpy as np
 import shap
 import pickle
 import os
+import json
+import logging
 import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
-import os
-import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-# =========================
-# LOAD MODEL + DATA
-# =========================
 
+os.makedirs("results/shap", exist_ok=True)
+
+logger = logging.getLogger("shap_logger")
+logger.setLevel(logging.INFO)
+
+if not logger.handlers:
+    fh = logging.FileHandler("results/shap/abc_shap.log")
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+
+# LOAD DATA
 def load_test_data(dataset):
-
     with open(f"data/{dataset}_test.pkl", "rb") as f:
         data = pickle.load(f)
 
@@ -35,33 +41,30 @@ def load_test_data(dataset):
     return X, y
 
 
-# =========================
 # SHAP COMPUTATION
-# =========================
-
 def compute_shap(model, X, exp_name, sample_size=100):
-    """
-    Returns:
-        shap_values: (N, features)
-        global_importance: (features,)
-    """
+
+    logger.info(f"[{exp_name}] Starting SHAP computation")
 
     device = torch.device("cpu")
     model.to(device)
     model.eval()
 
+    logger.info(f"[{exp_name}] Model moved to CPU and set to eval")
+
     X_sample = torch.tensor(X[:sample_size]).to(device)
 
     try:
+        logger.info(f"[{exp_name}] Using DeepExplainer")
+
         explainer = shap.DeepExplainer(model, X_sample)
         shap_values = explainer.shap_values(X_sample)
 
-        # handle binary case
         if isinstance(shap_values, list):
             shap_values = shap_values[0]
 
     except Exception as e:
-        print("[WARNING] DeepExplainer failed, switching to KernelExplainer")
+        logger.warning(f"[{exp_name}] DeepExplainer failed → switching to KernelExplainer")
 
         def f(x):
             x_tensor = torch.tensor(x).float().to(device)
@@ -72,185 +75,152 @@ def compute_shap(model, X, exp_name, sample_size=100):
         shap_values = explainer.shap_values(X[:sample_size])
 
     shap_values = np.array(shap_values)
+
     if len(shap_values.shape) == 3:
         shap_values = shap_values.squeeze(-1)
 
-    global_importance = np.mean(np.abs(shap_values), axis=0)
+    global_importance = np.mean(np.abs(shap_values), axis=0).reshape(-1)
 
-    # 🔥 FORCE FLATTEN (CRITICAL FIX)
-    global_importance = np.array(global_importance).reshape(-1)
-    top_features = np.argsort(global_importance)[-10:][::-1]
-
-    print(f"\n[{exp_name.upper()}] Top Features:")
-    for f in top_features:
-        value = float(global_importance[f])
-        print(f"Feature {f} → Importance: {value:.4f}")
+    logger.info(f"[{exp_name}] SHAP computation completed")
 
     return shap_values, global_importance
 
 
-# =========================
-# METRICS
-# =========================
 
-def spearman_corr(shap1, shap2):
-    corr, _ = spearmanr(shap1, shap2)
-    return float(corr)
+def spearman_corr(a, b):
+    return float(spearmanr(a, b)[0])
 
 
-def topk_jaccard(shap1, shap2, k=10):
-    top1 = np.argsort(shap1)[-k:]
-    top2 = np.argsort(shap2)[-k:]
-
-    intersection = len(set(top1).intersection(set(top2)))
-    union = len(set(top1).union(set(top2)))
-
-    return intersection / union if union > 0 else 0.0
+def topk_jaccard(a, b, k=10):
+    top1 = set(np.argsort(a)[-k:])
+    top2 = set(np.argsort(b)[-k:])
+    return len(top1 & top2) / len(top1 | top2)
 
 
-def shap_drift(shap1, shap2):
-    return float(np.mean(np.abs(shap1 - shap2)))
+def shap_drift(a, b):
+    return float(np.mean(np.abs(a - b)))
 
 
-def prediction_explanation_consistency(model, X, shap_values):
-    """
-    correlation between prediction confidence and shap magnitude
-    """
-
+def faithfulness_test(model, X, shap_values, k=5):
     device = torch.device("cpu")
     model.eval()
 
     X_tensor = torch.tensor(X[:len(shap_values)]).to(device)
 
     with torch.no_grad():
-        probs = torch.sigmoid(model(X_tensor)).cpu().numpy().ravel()
+        original = torch.sigmoid(model(X_tensor)).cpu().numpy().ravel()
 
-    shap_sum = np.sum(np.abs(shap_values), axis=1)
+    drops = []
 
-    corr, _ = spearmanr(probs, shap_sum)
+    for i in range(len(shap_values)):
+        x = X[i].copy()
+        top_features = np.argsort(np.abs(shap_values[i]))[-k:]
+        x[top_features] = 0
 
-    return float(corr)
+        with torch.no_grad():
+            new_pred = torch.sigmoid(
+                model(torch.tensor(x).float().unsqueeze(0))
+            ).item()
 
+        drops.append(abs(original[i] - new_pred))
 
-# =========================
-# SAVE / LOAD
-# =========================
-
-def save_shap(exp_name, shap_values, global_importance, dataset):
-    os.makedirs("results/shap", exist_ok=True)
-
-    np.save(f"results/shap/{dataset}_{exp_name}_shap.npy", shap_values)
-    np.save(f"results/shap/{dataset}_{exp_name}_global.npy", global_importance)
-
-
-def load_shap(exp_name, dataset):
-    shap_values = np.load(f"results/shap/{dataset}_{exp_name}_shap.npy")
-    global_importance = np.load(f"results/shap/{dataset}_{exp_name}_global.npy")
-    return shap_values, global_importance
+    return float(np.mean(drops))
 
 
-# =========================
-# COMPARISON PIPELINE
-# =========================
+def perturbation_stability(model, X, shap_values):
+    X_noisy = X + np.random.normal(0, 0.01, X.shape)
+    new_shap, _ = compute_shap(model, X_noisy, "temp")
 
-def compare_experiments(base_exp, other_exp, model, X, dataset):
-    
-    shap_vals, other_global = load_shap(other_exp, dataset)
-    base_vals, base_global = load_shap(base_exp, dataset)
-    
-
-    results = {
-        "spearman": spearman_corr(base_global, other_global),
-        "topk_jaccard": topk_jaccard(base_global, other_global),
-        "drift": shap_drift(base_global, other_global),
-        "consistency": prediction_explanation_consistency(model, X, shap_vals),
-    }
-    
-    
-    return results
+    return spearman_corr(
+        np.mean(np.abs(shap_values), axis=0),
+        np.mean(np.abs(new_shap), axis=0)
+    )
 
 
-# =========================
-# HUMAN-READABLE EXPLANATIONS
-# =========================
-
-def explain_single_prediction(model, X, shap_values, idx=0, feature_names=None):
-    """
-    Returns textual explanation for one sample
-    """
-
-    sample = X[idx]
-    shap_val = shap_values[idx]
-    # 🔥 Ensure 1D vector (CRITICAL FIX)
-    shap_val = np.array(shap_val).reshape(-1)
-
-    top_features = np.argsort(np.abs(shap_val))[-5:]
-    top_features = list(map(int, top_features))  # ensure hashable ints  
-
-    explanation = []
-
-    for f in reversed(top_features):
-        name = f"feature_{f}" if feature_names is None else feature_names[f]
-        contribution = float(np.array(shap_val[f]).item())
-
-        direction = "increased" if contribution > 0 else "decreased"
-
-        explanation.append(
-            f"{name} {direction} prediction (impact={contribution:.4f})"
-        )
-
-    return explanation
-
-def privacy_interpretability_tradeoff(exp_name, dataset):
-    import json
-
-    with open(f"results/{dataset}_{exp_name}.json") as f:
-        history = json.load(f)
-
-    final = history[-1]
-    leakage = final["leakage"]
-
-    shap_vals, global_vals = load_shap(exp_name, dataset)
-    base_vals, base_global = load_shap("baseline", dataset)
-
-    result = {
-        "spearman": spearman_corr(base_global, global_vals),
-        "drift": shap_drift(base_global, global_vals),
-        "leakage": leakage
-    }
-
-    print("\n[TRADEOFF ANALYSIS]")
-    print(f"Leakage: {leakage:.4f}")
-    print(f"SHAP Stability (Spearman): {result['spearman']:.4f}")
-    print(f"SHAP Drift: {result['drift']:.4f}")
-
-    return result
-
-# =========================
-# MAIN RUN FUNCTION
-# =========================
+def save_shap(exp, shap_vals, global_vals, dataset):
+    np.save(f"results/shap/{dataset}_{exp}_shap.npy", shap_vals)
+    np.save(f"results/shap/{dataset}_{exp}_global.npy", global_vals)
 
 
+def load_shap(exp, dataset):
+    return (
+        np.load(f"results/shap/{dataset}_{exp}_shap.npy"),
+        np.load(f"results/shap/{dataset}_{exp}_global.npy")
+    )
+
+
+
+# CORE SHAP ANALYSIS
 def run_shap_analysis(exp_name, model, dataset):
 
-    X, y = load_test_data(dataset)
+    logger.info(f"\n========== START: {exp_name} ==========")
 
+    X, _ = load_test_data(dataset)
 
-    shap_values, global_importance = compute_shap(model, X, exp_name)
+    logger.info(f"[{exp_name}] Data loaded → shape={X.shape}")
 
-    save_shap(exp_name, shap_values, global_importance, dataset)
+    shap_vals, global_vals = compute_shap(model, X, exp_name)
 
-    print(f"[SHAP] Saved for {exp_name}")
-    
+    logger.info(f"[{exp_name}] Computing metrics")
+
+    faithfulness = faithfulness_test(model, X, shap_vals)
+    stability = perturbation_stability(model, X, shap_vals)
+
+    logger.info(
+        f"[{exp_name}] Metrics → Faithfulness={faithfulness:.4f}, Stability={stability:.4f}"
+    )
+
+    metrics = {
+        "experiment": exp_name,
+        "faithfulness": faithfulness,
+        "stability": stability
+    }
+
+    logger.info(f"[{exp_name}] Saving SHAP arrays")
+
+    save_shap(exp_name, shap_vals, global_vals, dataset)
+
+    logger.info(f"[{exp_name}] Saving metrics JSON")
+
+    with open(f"results/shap/{dataset}_{exp_name}_metrics.json", "w") as f:
+        json.dump(metrics, f, indent=4)
+
+    logger.info(f"[{exp_name}] Generating SHAP summary plot")
+
     plt.figure()
-    X_sample = X[:shap_values.shape[0]]
-    shap.summary_plot(shap_values, X_sample, show=False)
+    shap.summary_plot(shap_vals, X[:shap_vals.shape[0]], show=False)
     plt.savefig(f"results/shap/{dataset}_{exp_name}_summary.png")
     plt.close()
-    explanation = explain_single_prediction(model, X, shap_values, idx=0)
 
-    print(f"\n[{exp_name.upper()}] Example Explanation:")
-    for line in explanation:
-        print(line)
+    logger.info(f"[{exp_name}] Plot saved")
 
-    return shap_values, global_importance
+    logger.info(f"========== END: {exp_name} ==========\n")
+
+    return shap_vals, global_vals
+
+
+def compare_experiments(base, other, dataset):
+
+    logger.info(f"[COMPARE] {other} vs {base}")
+
+    _, base_g = load_shap(base, dataset)
+    _, other_g = load_shap(other, dataset)
+
+    spearman = spearman_corr(base_g, other_g)
+    jaccard = topk_jaccard(base_g, other_g)
+    drift = shap_drift(base_g, other_g)
+
+    logger.info(
+        f"[COMPARE] {other} → Spearman={spearman:.4f}, Jaccard={jaccard:.4f}, Drift={drift:.4f}"
+    )
+
+    return {
+        "spearman": spearman,
+        "topk_jaccard": jaccard,
+        "drift": drift,
+    }
+
+
+def get_leakage(exp, dataset):
+    with open(f"results/{dataset}_{exp}.json") as f:
+        return json.load(f)[-1]["leakage"]

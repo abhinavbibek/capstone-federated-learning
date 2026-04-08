@@ -96,6 +96,4 @@ do
     echo "Finished experiment: $EXP" | tee -a $LOG_FILE
     sleep 5
 done
-echo "Running SHAP comparisons..." | tee -a $LOG_FILE
-python -m analysis.compare_shap $DATASET >> $LOG_FILE 2>&1
 echo "All experiments completed" | tee -a $LOG_FILE
