@@ -5,7 +5,7 @@ import pandas as pd
 RESULTS_DIR = "results"
 
 # Target rounds
-TARGET_ROUNDS = [0, 2, 5, 8, 10]
+TARGET_ROUNDS = [0, 2, 5, 8, 10, 20, 30, 40]
 
 # Store results per round
 round_data = {r: [] for r in TARGET_ROUNDS}

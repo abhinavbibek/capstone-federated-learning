@@ -6,7 +6,7 @@ import os
 # ==============================
 # SELECT DATASET
 # ==============================
-DATASET = "credit"   # "adult" or "credit"
+DATASET = "adult"   # "adult" or "credit"
 
 print("="*60)
 print(f"CREATING NON-IID CLIENT DATA SPLITS ({DATASET.upper()})")
@@ -72,6 +72,7 @@ elif DATASET == "credit":
         (0.970, 0.030),
     ]
 
+results = []
 # ==============================
 # CREATE CLIENT DATA
 # ==============================
@@ -108,5 +109,19 @@ for i, (ratio0, ratio1) in enumerate(distributions):
     
 
     print(f"Client {client_id}: Class0={sum(client_y==0)}, Class1={sum(client_y==1)}")
+    c0 = sum(client_y == 0)
+    c1 = sum(client_y == 1)
+    total = len(client_y)
 
+    p0 = (c0 / total) * 100
+    p1 = (c1 / total) * 100
+
+    results.append((client_id, p0, p1))
+
+    print(f"Client {client_id}: Class0={p0:.2f}%, Class1={p1:.2f}%")
+
+# SAVE FOR PAPER
+import pandas as pd
+df = pd.DataFrame(results, columns=["Client", "Class0 (%)", "Class1 (%)"])
+df.to_csv(f"results/{DATASET}_noniid_summary.csv", index=False)
 print("\n NON-IID SPLIT COMPLETED")

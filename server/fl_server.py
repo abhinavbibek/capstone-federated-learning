@@ -6,7 +6,11 @@ import torch.nn as nn
 import numpy as np
 import json
 import os
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, roc_auc_score
+from opacus.accountants import RDPAccountant
+from sklearn.metrics import mutual_info_score
 import sys
 from sklearn.preprocessing import StandardScaler
 from configs.config import *
@@ -31,7 +35,8 @@ def get_eval_fn(exp_name, dataset):
     history = []
     with open(f"data/{dataset}_global_scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
-    
+
+    accountant = RDPAccountant()
     # ===== LOAD TRAIN DATA (for privacy metrics) =====
     with open(f'data/{dataset}_train.pkl', 'rb') as f:
         train_data = pickle.load(f)
@@ -60,6 +65,28 @@ def get_eval_fn(exp_name, dataset):
     print("Test shape:", X_test.shape)
     print("Test label distribution:", np.unique(y_test.numpy(), return_counts=True))
 
+
+
+    def compute_mia(probs_train, probs_test):
+
+        X = np.concatenate([
+            probs_train.reshape(-1,1),
+            probs_test.reshape(-1,1)
+        ])
+
+        y = np.concatenate([
+            np.ones(len(probs_train)),   # train = 1
+            np.zeros(len(probs_test))    # test = 0
+        ])
+
+        X_train_mia, X_test_mia, y_train_mia, y_test_mia = train_test_split(X, y, test_size=0.3)
+
+        clf = LogisticRegression()
+        clf.fit(X_train_mia, y_train_mia)
+
+        preds = clf.predict(X_test_mia)
+        return float(np.mean(preds == y_test_mia))
+
     def compute_privacy_metrics(model, X_test, y_test, X_train, y_train, device):
         with torch.no_grad():
             # ===== TEST =====
@@ -75,10 +102,11 @@ def get_eval_fn(exp_name, dataset):
         # =========================
         threshold = np.mean(probs_train)
 
-        mia_acc = (
-            np.sum(probs_train > threshold) +
-            np.sum(probs_test <= threshold)
-        ) / (len(probs_train) + len(probs_test))
+        # mia_acc = (
+        #     np.sum(probs_train > threshold) +
+        #     np.sum(probs_test <= threshold)
+        # ) / (len(probs_train) + len(probs_test))
+        mia_acc = compute_mia(probs_train, probs_test)
 
         # =========================
         # 🔥 2. CONFIDENCE GAP
@@ -99,42 +127,70 @@ def get_eval_fn(exp_name, dataset):
             "entropy": float(entropy)
         }
 
-    def compute_asr(y_true, y_pred, attack_type):
+    # def compute_asr(y_true, y_pred, attack_type):
     
+    #     y_true = y_true.astype(int)
+    #     y_pred = y_pred.astype(int)
+
+    #     if attack_type is None:
+    #         return 0.0
+
+    #     # ======================
+    #     # LABEL FLIP ATTACK
+    #     # ======================
+    #     if attack_type == "label_flip":
+    #         # attack tries to flip labels
+    #         flipped = (y_true != y_pred)
+    #         return np.mean(flipped)
+
+    #     # ======================
+    #     # TARGETED FLIP (1 → 0)
+    #     # ======================
+    #     elif attack_type == "targeted_flip":
+    #         target_mask = (y_true == 1)
+    #         success = (y_pred[target_mask] == 0)
+    #         return np.mean(success) if np.sum(target_mask) > 0 else 0.0
+
+    #     # ======================
+    #     # FEATURE POISON
+    #     # ======================
+    #     elif attack_type == "feature_poison":
+    #         # indirect → measure misclassification
+    #         return 1.0 - np.mean(y_true == y_pred)
+
+    #     # ======================
+    #     # MODEL POISONING
+    #     # ======================
+    #     elif attack_type in ["sign_flip", "scaling"]:
+    #         return 1.0 - np.mean(y_true == y_pred)
+
+    #     return 0.0
+    def compute_asr(y_true, y_pred, attack_type):
+
         y_true = y_true.astype(int)
         y_pred = y_pred.astype(int)
 
         if attack_type is None:
             return 0.0
 
-        # ======================
-        # LABEL FLIP ATTACK
-        # ======================
+        # LABEL FLIP → wrong classification
         if attack_type == "label_flip":
-            # attack tries to flip labels
-            flipped = (y_true != y_pred)
-            return np.mean(flipped)
+            return float(np.mean(y_true != y_pred))
 
-        # ======================
-        # TARGETED FLIP (1 → 0)
-        # ======================
+        # TARGETED → fraud → non-fraud
         elif attack_type == "targeted_flip":
-            target_mask = (y_true == 1)
-            success = (y_pred[target_mask] == 0)
-            return np.mean(success) if np.sum(target_mask) > 0 else 0.0
+            mask = (y_true == 1)
+            if np.sum(mask) == 0:
+                return 0.0
+            return float(np.mean(y_pred[mask] == 0))
 
-        # ======================
-        # FEATURE POISON
-        # ======================
+        # FEATURE POISON → misclassification increase
         elif attack_type == "feature_poison":
-            # indirect → measure misclassification
-            return 1.0 - np.mean(y_true == y_pred)
+            return float(np.mean(y_true != y_pred))
 
-        # ======================
-        # MODEL POISONING
-        # ======================
+        # MODEL ATTACKS → deviation from baseline
         elif attack_type in ["sign_flip", "scaling"]:
-            return 1.0 - np.mean(y_true == y_pred)
+            return float(np.mean(y_true != y_pred))
 
         return 0.0
 
@@ -142,11 +198,19 @@ def get_eval_fn(exp_name, dataset):
         X_np = X_test.numpy()  
         feature_mean = np.mean(X_np[:, 0])
 
-        def leakage_score(probs, X):
-            feature = X[:, 0]
-            pred = (probs > 0.5).astype(int)
-            true = (feature > feature_mean).astype(int)
-            return np.mean(pred == true)
+
+        def leakage_score(probs, X, threshold):
+            preds = (probs > threshold).astype(int)
+
+            scores = []
+            for i in range(min(10, X.shape[1])):
+                feature = X[:, i]
+                feature_bin = (feature > np.mean(feature)).astype(int)
+
+                mi = mutual_info_score(feature_bin, preds)
+                scores.append(mi)
+
+            return float(np.mean(scores))
 
         device = torch.device("cpu")
         model = SimpleMLPModel(X_test.shape[1]).to(device)
@@ -157,7 +221,28 @@ def get_eval_fn(exp_name, dataset):
         os.makedirs("results", exist_ok=True)
         model.eval()
         criterion = nn.BCEWithLogitsLoss()
-        epsilon = config.get("epsilon", 0.0)
+        # Get epsilon from strategy aggregation
+        if exp_config.get("defense") in ["dp_server_fixed"]:
+            sample_rate = 1.0  # since all clients participate
+
+            # Get DP params
+            noise = exp_config.get("noise", 0.0)
+
+            # Update accountant
+            if noise > 0:
+                accountant.step(noise_multiplier=noise, sample_rate=sample_rate)
+            try:
+                epsilon = accountant.get_epsilon(delta=1e-5)
+            except:
+                epsilon = 0.0
+
+        epsilon = config.get("epsilon", None)
+
+        if epsilon is None:
+            epsilon = np.mean([
+                m.get("epsilon", 0.0)
+                for _, m in config.get("fit_metrics", {}).items()
+            ]) if "fit_metrics" in config else 0.0
         # Move data to same device
         X = X_test.to(device)
         y = y_test.to(device)
@@ -168,17 +253,19 @@ def get_eval_fn(exp_name, dataset):
             loss = criterion(logits, y).item()
 
             probs = torch.sigmoid(logits)
-            leakage = leakage_score(probs.cpu().numpy().ravel(), X.cpu().numpy())
+            
+            
 
             y_true = y.cpu().numpy().ravel()
             y_prob = probs.cpu().numpy().ravel()
+            
             print("Mean prob:", np.mean(y_prob))
             #threshold = 0.3 if dataset == "credit" else 0.5
             if dataset == "credit":
                 threshold = np.percentile(y_prob, 99.5)  # adaptive
             else:
                 threshold = 0.5
-
+            leakage = leakage_score(y_prob, X.cpu().numpy(), threshold)
             y_pred = (probs > threshold).cpu().numpy().ravel()
             print("Predicted positives:", np.sum(y_pred))
             asr = compute_asr(y_true, y_pred, attack_type)
@@ -230,7 +317,15 @@ def get_eval_fn(exp_name, dataset):
             json.dump(history, f, indent=4)
 
 
-        if server_round == ROUNDS:
+        if server_round == ROUNDS and exp_name in [
+            "baseline",
+            "sign_flip_only",
+            "feature_poison_only",
+            "dp_local_eps1",
+            "dp_local_eps2",
+            "dp_local_eps5",
+            "final_system"
+        ]:
 
             print("\n[INFO] Running SHAP analysis...")
             torch.save(model.state_dict(), f"results/{dataset}_{exp_name}_model.pt")
@@ -281,24 +376,7 @@ if __name__ == "__main__":
         )
 
 
-    elif defense == "dp_server_adaptive":
-        print("Using DP Server Adaptive (Flower)")
 
-        base_strategy = fl.server.strategy.FedAvg(
-            evaluate_fn=get_eval_fn(exp_name, dataset),
-            fraction_fit=1.0,
-            min_fit_clients=NUM_CLIENTS,
-            min_available_clients=NUM_CLIENTS,
-            fraction_evaluate=1.0,
-            min_evaluate_clients=NUM_CLIENTS,
-        )
-
-        strategy = DifferentialPrivacyServerSideAdaptiveClipping(
-            base_strategy,
-            noise_multiplier=exp_config["noise"],
-            num_sampled_clients=NUM_CLIENTS,
-            clipped_count_stddev=2.0,
-        )
 
 
     elif defense in ["median", "trimmed_mean", "krum", "clipping", "trust"]:
@@ -335,3 +413,4 @@ if __name__ == "__main__":
         strategy=strategy,
     )
     
+

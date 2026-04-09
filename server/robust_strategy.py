@@ -2,6 +2,7 @@
 import flwr as fl
 import numpy as np
 from server.trust_manager import TrustManager
+import os, json
 
 from server.robust_aggregation import (
     median_aggregation,
@@ -140,7 +141,45 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
             ]# 🔥 ADD THIS LINE
             client_ids = [client_ids[i] for i in selected_idx]  # 🔥 MATCH FILTERED CLIENTS
 
-            trust_scores = self.trust_manager.compute_trust(client_ids, weights)
+            # trust_scores = self.trust_manager.compute_trust(client_ids, weights)
+            filtered_weights = [weights[i] for i in selected_idx]
+
+            trust_scores = self.trust_manager.compute_trust(client_ids, filtered_weights)
+            weights = filtered_weights
+            # ================= SAVE TRUST SCORES =================
+
+            # Ensure dataset attribute exists
+            dataset = self.dataset if hasattr(self, "dataset") else "unknown"
+
+            os.makedirs(f"results/trust/{dataset}", exist_ok=True)
+            trust_log_path = f"results/trust/{dataset}/trust_log.json"
+
+            round_data = {
+                "round": int(rnd),
+                "client_ids": [int(cid) for cid in client_ids],
+                "trust_scores": trust_scores.tolist()
+            }
+
+            # Load existing data
+            if os.path.exists(trust_log_path):
+                try:
+                    with open(trust_log_path, "r") as f:
+                        all_data = json.load(f)
+                except:
+                    all_data = []
+            else:
+                all_data = []
+
+            # Append new round
+            all_data.append(round_data)
+
+            # Save
+            tmp_path = trust_log_path + ".tmp"
+
+            with open(tmp_path, "w") as f:
+                json.dump(all_data, f, indent=4)
+
+            os.replace(tmp_path, trust_log_path)
         else:
             trust_scores = np.ones(len(weights)) / len(weights)
         
@@ -183,7 +222,8 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
         # client_weights /= np.sum(client_weights)
         # 🔥 SIMPLER + STABLE TRUST INTEGRATION
         if self.use_trust:
-            client_weights = 0.9 * loss_weights + 0.1 * trust_scores
+            # client_weights = 0.9 * loss_weights + 0.1 * trust_scores
+            client_weights = 0.6 * loss_weights + 0.4 * trust_scores
         else:
             client_weights = loss_weights
 
@@ -211,7 +251,8 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
                     soft_weights.append(combined_score[i])
                 else:
                     # ↓ Instead of removing → suppress
-                    soft_weights.append(combined_score[i] * 0.8)
+                    # soft_weights.append(combined_score[i] * 0.8)
+                    soft_weights.append(combined_score[i] * 0.5)
 
             soft_weights = np.array(soft_weights)
             soft_weights /= (np.sum(soft_weights) + 1e-6)
@@ -291,19 +332,6 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
 
         self.prev_weights = aggregated
 
-        # ================= NOISE =================
-
-        # if self.method in ["dp_server_fixed", "dp_server_adaptive"]:
-        #     aggregated = add_adaptive_noise(aggregated, weights, rnd)
-
-        # elif self.use_trust:
-        #     aggregated = add_adaptive_noise(
-        #         aggregated,
-        #         weights,
-        #         rnd,
-        #         trust_scores if len(trust_scores) == len(weights) else None
-        #     )
-
         parameters = fl.common.ndarrays_to_parameters(aggregated)
 
         epsilons = [
@@ -311,4 +339,9 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
             for _, fit_res in results
         ]
 
-        return parameters, {"epsilon": float(np.mean(epsilons))}
+        return parameters, {
+            "epsilon": float(np.mean(epsilons)),
+            "fit_metrics": {
+                i: fit_res.metrics for i, (_, fit_res) in enumerate(results)
+            }
+        }

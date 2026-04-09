@@ -1,7 +1,7 @@
 #attacks/feature_poisoning.py
 import numpy as np
 
-def feature_poison(X, severity=None, flip_prob=0.3):
+def feature_poison(X, severity=0.8, flip_prob=0.6):
     X = X.copy()
 
     # Auto severity based on standardized data

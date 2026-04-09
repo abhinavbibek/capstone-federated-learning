@@ -34,13 +34,10 @@ EXPERIMENTS=(
 
 # # #DP experiments
 "dp_local_eps1" "dp_local_eps2" "dp_local_eps5" "dp_local_adaptive" "dp_server_fixed"
-"dp_server_adaptive" 
 
 
 # final system experiment
 "final_system"
-
-
 )
 
 
@@ -63,17 +60,10 @@ do
 
     echo "Server is ready!" | tee -a $LOG_FILE
 
-    # Start clients
-    # CLIENT_PIDS=()
-    # for i in {1..10}
-    # do
-    #     python -m clients.run_client $i $EXP >> $LOG_FILE 2>&1 &
-    #     CLIENT_PIDS+=($!)
-    # done
     
     CLIENT_PIDS=()
 
-    GPU_LIST=(1 2 4)   # 🔥 manually choose from nvidia-smi
+    GPU_LIST=(0 3 4 6 7)   # 🔥 manually choose from nvidia-smi
     NUM_GPUS=${#GPU_LIST[@]}
 
     for i in {1..10}

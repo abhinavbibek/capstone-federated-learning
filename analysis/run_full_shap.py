@@ -13,14 +13,9 @@ from analysis.shap_analysis import (
 
 EXPERIMENTS = [
     "baseline",
-    "label_flip_only",
-    "targeted_flip_only",
     "feature_poison_only",
     "sign_flip_only",
-    "scaling_only",
-    "label_flip_median", "label_flip_trimmed", "label_flip_krum", "label_flip_clip",
-    "dp_local_eps1", "dp_local_eps2", "dp_local_eps5", "dp_local_adaptive",
-    "dp_server_fixed", "dp_server_adaptive",
+    "dp_local_eps1", "dp_local_eps2", "dp_local_eps5",
     "final_system"
 ]
 

@@ -1,7 +1,7 @@
 # configs/config.py
 
 NUM_CLIENTS = 10
-ROUNDS = 10
+ROUNDS = 40
 
 LOCAL_EPOCHS = 12
 BATCH_SIZE = 64
@@ -9,7 +9,7 @@ LEARNING_RATE = 0.001
 
 
 # Adversarial clients
-ATTACK_CLIENTS = [6, 7, 9, 10]
+ATTACK_CLIENTS = [3, 6, 7, 9, 10]
 
 
 # Random seed for reproducibility
@@ -83,13 +83,6 @@ EXPERIMENTS = {
         "clip": 1.0
     },
 
-    "dp_server_adaptive": {
-        "attack": None,
-        "defense": "dp_server_adaptive",
-        "dp": None,
-        "noise": 0.1,
-        "clip": 1.0
-    },
 
     "dp_local_adaptive": {
         "attack": None,
