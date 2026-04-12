@@ -40,8 +40,9 @@ for exp in EXPERIMENTS:
         continue
 
     try:
-        metrics_path = f"results/shap/{dataset}_{exp}_metrics.json"
-        if not os.path.exists(metrics_path):
+        expl_path = f"results/shap/{dataset}_{exp}_explanations.json"
+
+        if not os.path.exists(expl_path):
             print(f"[INFO] Generating SHAP for {exp}")
 
             model = SimpleMLPModel(X.shape[1])
@@ -49,8 +50,14 @@ for exp in EXPERIMENTS:
 
             run_shap_analysis(exp, model, dataset)
 
+        # Load metrics (faithfulness, stability)
+        metrics_path = f"results/shap/{dataset}_{exp}_metrics.json"
         with open(metrics_path) as f:
-            extra = json.load(f)
+            metrics_data = json.load(f)
+
+        # Load explanations (feature importance)
+        with open(expl_path) as f:
+            expl = json.load(f)
 
         base_metrics = compare_experiments("baseline", exp, dataset)
         leakage = get_leakage(exp, dataset)
@@ -60,10 +67,18 @@ for exp in EXPERIMENTS:
             "spearman": base_metrics["spearman"],
             "topk_jaccard": base_metrics["topk_jaccard"],
             "drift": base_metrics["drift"],
-            "faithfulness": extra["faithfulness"],
-            "stability": extra["stability"],
+            "faithfulness": metrics_data["faithfulness"],   # ✅ FIX
+            "stability": metrics_data["stability"],         # ✅ FIX
             "leakage": leakage
         }
+        # 🔥 LOAD EXPLANATION FILE
+        with open(f"results/shap/{dataset}_{exp}_explanations.json") as f:
+            expl = json.load(f)
+
+        # Take top 3 features for compact CSV
+        top_feats = [f["feature"] for f in expl["global_top_features"][:3]]
+
+        combined["top_features"] = ", ".join(top_feats)
 
         results.append(combined)
 

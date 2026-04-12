@@ -4,6 +4,7 @@ import numpy as np
 import pickle
 import os
 import json
+from sklearn.linear_model import LogisticRegression
 
 from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
 

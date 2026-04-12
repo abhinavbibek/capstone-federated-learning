@@ -4,10 +4,10 @@ import pickle
 import torch
 import torch.nn as nn
 import numpy as np
+from sklearn.model_selection import train_test_split
 import json
 import os
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, roc_auc_score
 from opacus.accountants import RDPAccountant
 from sklearn.metrics import mutual_info_score
@@ -19,8 +19,7 @@ from server.robust_strategy import RobustFedAvg
 from configs.config import EXPERIMENTS
 from utils.seed import set_seed
 from flwr.server.strategy import (
-    DifferentialPrivacyServerSideFixedClipping,
-    DifferentialPrivacyServerSideAdaptiveClipping
+    DifferentialPrivacyServerSideFixedClipping
 )
 import logging
 from analysis.shap_analysis import run_shap_analysis
@@ -31,7 +30,7 @@ exp_name = sys.argv[1]
 dataset = sys.argv[2]
 
 
-def get_eval_fn(exp_name, dataset):
+def get_eval_fn(exp_name, dataset, strategy):
     history = []
     with open(f"data/{dataset}_global_scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
@@ -66,26 +65,60 @@ def get_eval_fn(exp_name, dataset):
     print("Test label distribution:", np.unique(y_test.numpy(), return_counts=True))
 
 
-
     def compute_mia(probs_train, probs_test):
 
+        # Add small noise (keep this)
+        noise = np.random.normal(0, 0.01, size=probs_train.shape)
+        probs_train = probs_train + noise
+
+        noise = np.random.normal(0, 0.01, size=probs_test.shape)
+        probs_test = probs_test + noise
+
+        # 🔥 CLIP for numerical stability
+        probs_train = np.clip(probs_train, 1e-6, 1 - 1e-6)
+        probs_test = np.clip(probs_test, 1e-6, 1 - 1e-6)
+
+        # =========================
+        # 🔥 NEW FEATURES (KEY FIX)
+        # =========================
+
+        # Entropy
+        entropy_train = - (
+            probs_train * np.log(probs_train) +
+            (1 - probs_train) * np.log(1 - probs_train)
+        )
+
+        entropy_test = - (
+            probs_test * np.log(probs_test) +
+            (1 - probs_test) * np.log(1 - probs_test)
+        )
+
+        # Confidence gap feature (distance from 0.5)
+        conf_train = np.abs(probs_train - 0.5)
+        conf_test = np.abs(probs_test - 0.5)
+
+        # Stack features → (prob, entropy, confidence)
         X = np.concatenate([
-            probs_train.reshape(-1,1),
-            probs_test.reshape(-1,1)
+            np.stack([probs_train, entropy_train, conf_train], axis=1),
+            np.stack([probs_test, entropy_test, conf_test], axis=1)
         ])
 
         y = np.concatenate([
-            np.ones(len(probs_train)),   # train = 1
-            np.zeros(len(probs_test))    # test = 0
+            np.ones(len(probs_train)),
+            np.zeros(len(probs_test))
         ])
 
-        X_train_mia, X_test_mia, y_train_mia, y_test_mia = train_test_split(X, y, test_size=0.3)
+        from sklearn.model_selection import train_test_split
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            X, y, test_size=0.5, stratify=y, random_state=42
+        )
 
-        clf = LogisticRegression()
-        clf.fit(X_train_mia, y_train_mia)
+        clf = LogisticRegression(max_iter=300)
+        clf.fit(X_tr, y_tr)
 
-        preds = clf.predict(X_test_mia)
-        return float(np.mean(preds == y_test_mia))
+        preds = clf.predict(X_te)
+
+        return float(np.mean(preds == y_te))
 
     def compute_privacy_metrics(model, X_test, y_test, X_train, y_train, device):
         with torch.no_grad():
@@ -102,10 +135,7 @@ def get_eval_fn(exp_name, dataset):
         # =========================
         threshold = np.mean(probs_train)
 
-        # mia_acc = (
-        #     np.sum(probs_train > threshold) +
-        #     np.sum(probs_test <= threshold)
-        # ) / (len(probs_train) + len(probs_test))
+
         mia_acc = compute_mia(probs_train, probs_test)
 
         # =========================
@@ -221,28 +251,32 @@ def get_eval_fn(exp_name, dataset):
         os.makedirs("results", exist_ok=True)
         model.eval()
         criterion = nn.BCEWithLogitsLoss()
-        # Get epsilon from strategy aggregation
-        if exp_config.get("defense") in ["dp_server_fixed"]:
-            sample_rate = 1.0  # since all clients participate
+        # ================= EPSILON =================
 
-            # Get DP params
+        # SERVER-SIDE DP
+        if exp_config.get("defense") in ["dp_server_fixed"]:
+
+            sample_rate = 1.0
             noise = exp_config.get("noise", 0.0)
 
-            # Update accountant
             if noise > 0:
                 accountant.step(noise_multiplier=noise, sample_rate=sample_rate)
+
             try:
                 epsilon = accountant.get_epsilon(delta=1e-5)
             except:
                 epsilon = 0.0
 
-        epsilon = config.get("epsilon", None)
+        # LOCAL DP (from last aggregation round)
+        elif exp_config.get("dp") in ["local", "local_adaptive"]:
 
-        if epsilon is None:
-            epsilon = np.mean([
-                m.get("epsilon", 0.0)
-                for _, m in config.get("fit_metrics", {}).items()
-            ]) if "fit_metrics" in config else 0.0
+            if hasattr(strategy, "latest_fit_metrics") and "mean_epsilon" in strategy.latest_fit_metrics:
+                epsilon = strategy.latest_fit_metrics["mean_epsilon"]
+            else:
+                epsilon = 0.0
+
+        else:
+            epsilon = 0.0
         # Move data to same device
         X = X_test.to(device)
         y = y_test.to(device)
@@ -360,13 +394,13 @@ if __name__ == "__main__":
         print("Using DP Server Fixed (Flower)")
 
         base_strategy = fl.server.strategy.FedAvg(
-            evaluate_fn=get_eval_fn(exp_name, dataset),
             fraction_fit=1.0,
             min_fit_clients=NUM_CLIENTS,
             min_available_clients=NUM_CLIENTS,
             fraction_evaluate=1.0,
             min_evaluate_clients=NUM_CLIENTS,
         )
+        
 
         strategy = DifferentialPrivacyServerSideFixedClipping(
             base_strategy,
@@ -374,39 +408,41 @@ if __name__ == "__main__":
             clipping_norm=exp_config["clip"],
             num_sampled_clients=NUM_CLIENTS,
         )
+        strategy.evaluate_fn = get_eval_fn(exp_name, dataset, strategy)
 
 
 
 
 
-    elif defense in ["median", "trimmed_mean", "krum", "clipping", "trust"]:
+    elif defense in ["median", "trimmed_mean", "krum", "clipping", "trust"] \
+        or exp_config.get("dp") in ["local", "local_adaptive"]:
         print(f"Using Robust Strategy: {defense}")
 
         strategy = RobustFedAvg(
-            method=defense,
+            method=defense if defense else "none",
             dataset=dataset,
-            evaluate_fn=get_eval_fn(exp_name, dataset),
             fraction_fit=1.0,
             min_fit_clients=NUM_CLIENTS,
             min_available_clients=NUM_CLIENTS,
             fraction_evaluate=1.0,
             min_evaluate_clients=NUM_CLIENTS,
         )
+        strategy.evaluate_fn = get_eval_fn(exp_name, dataset, strategy)
 
 
     else:
         print("Using Standard FedAvg")
 
         strategy = fl.server.strategy.FedAvg(
-            evaluate_fn=get_eval_fn(exp_name, dataset),
             fraction_fit=1.0,
             min_fit_clients=NUM_CLIENTS,
             min_available_clients=NUM_CLIENTS,
             fraction_evaluate=1.0,
             min_evaluate_clients=NUM_CLIENTS,
         )
+        strategy.evaluate_fn = get_eval_fn(exp_name, dataset, strategy)
 
-
+    print("STRATEGY TYPE:", type(strategy))
     fl.server.start_server(
         server_address="0.0.0.0:8081",
         config=fl.server.ServerConfig(num_rounds=ROUNDS),

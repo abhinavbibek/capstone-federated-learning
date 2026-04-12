@@ -79,7 +79,7 @@ EXPERIMENTS = {
         "attack": None,
         "defense": "dp_server_fixed",
         "dp": None,
-        "noise": 0.1,
+        "noise": 1.0,
         "clip": 1.0
     },
 

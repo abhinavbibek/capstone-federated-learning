@@ -33,7 +33,9 @@ EXPERIMENTS=(
 "scaling_median" "scaling_trimmed" "scaling_krum" "scaling_clip"
 
 # # #DP experiments
-"dp_local_eps1" "dp_local_eps2" "dp_local_eps5" "dp_local_adaptive" "dp_server_fixed"
+"dp_local_eps1" 
+"dp_local_eps2" "dp_local_eps5" 
+"dp_local_adaptive" "dp_server_fixed"
 
 
 # final system experiment
@@ -63,7 +65,7 @@ do
     
     CLIENT_PIDS=()
 
-    GPU_LIST=(0 3 4 6 7)   # 🔥 manually choose from nvidia-smi
+    GPU_LIST=(0 4 6)   # 🔥 manually choose from nvidia-smi
     NUM_GPUS=${#GPU_LIST[@]}
 
     for i in {1..10}

@@ -1,79 +1,147 @@
-# analysis/plots/plot_asr_vs_accuracy.py
-
-import json
-import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-import os
+import seaborn as sns
 
-os.makedirs("results/plots", exist_ok=True)
+# =========================
+# STYLE
+# =========================
+sns.set_theme(style="whitegrid", context="paper", font_scale=1.3)
 
-DATASET = "adult"
+plt.rcParams.update({
+    "font.family": "serif",
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+})
 
-EXPERIMENTS = [
-    "label_flip_only",
-    "label_flip_median",
-    "label_flip_trimmed",
-    "label_flip_krum",
-    "label_flip_clip",
-    "final_system"
-]
+# =========================
+# LOAD CSV
+# =========================
+adult_df = pd.read_csv("results_summary_adult_round_40.csv")
+credit_df = pd.read_csv("results_summary_credit_round_40.csv")
 
-# ==============================
-# LOAD DATA
-# ==============================
-results = []
+# =========================
+# HELPER FUNCTION
+# =========================
+def extract_asr(df, attack_name):
+    data = {}
 
-for exp in EXPERIMENTS:
-    with open(f"results/{DATASET}_{exp}.json") as f:
-        data = json.load(f)
+    # attack baseline
+    attack_row = df[df["experiment"].str.contains(f"{attack_name}_only")]
+    attack_asr = attack_row["asr"].values[0]
 
-    final = data[-1]
+    # defenses
+    for defense_key, label in {
+        "median": "Median Aggregation",
+        "trimmed": "Trimmed Mean",
+        "krum": "Krum"
+    }.items():
 
-    results.append({
-        "exp": exp,
-        "asr": final["asr"],
-        "acc": final["accuracy"]
-    })
+        row = df[df["experiment"].str.contains(f"{attack_name}_{defense_key}")]
+        if len(row) > 0:
+            data[label] = row["asr"].values[0]
 
-# Sort by ASR
-results = sorted(results, key=lambda x: x["asr"])
+    # final system → rename here
+    final_row = df[df["experiment"].str.contains("final_system")]
+    data["Our System"] = final_row["asr"].values[0]
 
-labels = [r["exp"] for r in results]
-asr = [r["asr"] for r in results]
-acc = [r["acc"] for r in results]
+    return data, attack_asr
 
-x = np.arange(len(labels))
 
-# ==============================
-# PLOT
-# ==============================
-fig, ax1 = plt.subplots(figsize=(9,5))
+# =========================
+# ATTACK LIST
+# =========================
+attacks = ["label_flip", "feature_poison", "sign_flip", "targeted_flip"]
 
-# BAR → ASR
-bars = ax1.bar(x, asr, alpha=0.6)
-ax1.set_ylabel("Attack Success Rate (ASR)", fontsize=11)
+# =========================
+# PLOT FUNCTION
+# =========================
+def plot_dataset(df, dataset_name):
 
-# Highlight final system
-for i, label in enumerate(labels):
-    if "final" in label:
-        bars[i].set_alpha(1.0)
-        bars[i].set_edgecolor("black")
-        bars[i].set_linewidth(1.5)
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    axes = axes.flatten()
 
-# LINE → Accuracy
-ax2 = ax1.twinx()
-ax2.plot(x, acc, marker='o', linewidth=2)
-ax2.set_ylabel("Accuracy", fontsize=11)
+    palette = {
+        "Median Aggregation": "#4C72B0",
+        "Trimmed Mean": "#55A868",
+        "Krum": "#C44E52",
+        "Our System": "#000000"
+    }
 
-# X-axis
-ax1.set_xticks(x)
-ax1.set_xticklabels(labels, rotation=30, ha='right', fontsize=9)
+    for i, attack in enumerate(attacks):
 
-# Grid
-ax1.grid(axis='y', alpha=0.3)
+        ax = axes[i]
 
-plt.title("Security–Utility Tradeoff across Defenses", fontsize=12)
-plt.tight_layout()
+        data, attack_asr = extract_asr(df, attack)
 
-plt.savefig("results/plots/adult_asr_vs_accuracy.png", dpi=300)
-plt.close()
+        methods = list(data.keys())
+        values = list(data.values())
+
+        x = range(len(methods))
+
+        bars = ax.bar(
+            x,
+            values,
+            color=[palette[m] for m in methods],
+            alpha=0.9
+        )
+
+        # Highlight OUR SYSTEM
+        for j, m in enumerate(methods):
+            if m == "Our System":
+                bars[j].set_linewidth(3)
+                bars[j].set_edgecolor("black")
+
+        # Attack reference line
+        ax.axhline(
+            attack_asr,
+            color="red",
+            linestyle="--",
+            linewidth=2,
+            label=""
+        )
+
+        # Annotate
+        for j, v in enumerate(values):
+            ax.text(j, v + 0.01, f"{v:.3f}", ha="center", fontsize=9)
+
+        ax.set_title(
+            attack.replace("_", " ").title(),
+            fontsize=12,
+            weight="bold"
+        )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(methods, rotation=15)
+        ax.set_ylabel("ASR")
+
+        ax.set_ylim(0, max(max(values), attack_asr) * 1.25)
+
+    fig.suptitle(
+        f"{dataset_name.upper()} — ASR vs Defense",
+        fontsize=16,
+        weight="bold"
+    )
+
+    # Global legend
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        ncol=2,
+        frameon=False
+    )
+
+    plt.tight_layout(rect=[0, 0, 1, 0.93])
+
+    plt.savefig(f"results/{dataset_name}_asr_vs_defense.pdf", dpi=600)
+    plt.savefig(f"results/{dataset_name}_asr_vs_defense.png", dpi=600)
+
+    plt.show()
+
+
+# =========================
+# RUN
+# =========================
+plot_dataset(adult_df, "adult")
+plot_dataset(credit_df, "credit")

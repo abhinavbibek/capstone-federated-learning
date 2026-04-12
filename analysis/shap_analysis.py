@@ -180,8 +180,67 @@ def run_shap_analysis(exp_name, model, dataset):
 
     save_shap(exp_name, shap_vals, global_vals, dataset)
 
-    logger.info(f"[{exp_name}] Saving metrics JSON")
+    # ==============================
+    # 🔥 NEW: EXPLANATION EXTRACTION
+    # ==============================
 
+    logger.info(f"[{exp_name}] Extracting explanations")
+
+    # Try to load feature names
+    try:
+        with open(f"data/{dataset}_test.pkl", "rb") as f:
+            data = pickle.load(f)
+        feature_names = data.get("feature_names", [f"f{i}" for i in range(X.shape[1])])
+    except:
+        feature_names = [f"f{i}" for i in range(X.shape[1])]
+
+    logger.info(f"[{exp_name}] Saving metrics JSON")
+    # ==============================
+    # 🔹 GLOBAL EXPLANATION
+    # ==============================
+    topk = 10
+    top_global_idx = np.argsort(global_vals)[::-1][:topk]
+
+    global_explanation = [
+        {
+            "feature": feature_names[i],
+            "importance": float(global_vals[i])
+        }
+        for i in top_global_idx
+    ]
+
+
+    # ==============================
+    # 🔹 LOCAL EXPLANATION (sample 0)
+    # ==============================
+    sample_idx = 0
+    sample_shap = shap_vals[sample_idx]
+
+    top_local_idx = np.argsort(np.abs(sample_shap))[::-1][:topk]
+
+    local_explanation = [
+        {
+            "feature": feature_names[i],
+            "contribution": float(sample_shap[i]),
+            "effect": "increase" if sample_shap[i] > 0 else "decrease"
+        }
+        for i in top_local_idx
+    ]
+
+
+    # ==============================
+    # 🔹 SAVE EXPLANATIONS
+    # ==============================
+    explanation_data = {
+        "experiment": exp_name,
+        "global_top_features": global_explanation,
+        "local_explanation_sample0": local_explanation
+    }
+
+    with open(f"results/shap/{dataset}_{exp_name}_explanations.json", "w") as f:
+        json.dump(explanation_data, f, indent=4)
+
+    logger.info(f"[{exp_name}] Explanations saved")
     with open(f"results/shap/{dataset}_{exp_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=4)
 

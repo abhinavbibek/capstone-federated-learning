@@ -84,6 +84,7 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
 
         # 🔥 TRUST FLAG (ONLY activates for final system)
         self.use_trust = (method == "trust")
+        self.latest_fit_metrics = {}
 
         self.trust_manager = TrustManager()
         self.prev_weights = None  # momentum
@@ -108,7 +109,7 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
 
         print(f"[DEBUG] All client losses: {losses}")
         # 🔥 DP SERVER FIX — normalize updates
-        if self.method.startswith("dp_server"):
+        if self.method and self.method.startswith("dp_server"):
             weights = normalize_updates(weights)
         # 🔥 GLOBAL CLIPPING (stability)
         weights = clip_updates(weights, threshold=5.0)
@@ -338,10 +339,19 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
             fit_res.metrics.get("epsilon", 0.0)
             for _, fit_res in results
         ]
+        print("\n[DEBUG] CLIENT EPSILONS:")
+        for i, (_, fit_res) in enumerate(results):
+            print(f"Client {i} epsilon:", fit_res.metrics.get("epsilon"))
 
-        return parameters, {
-            "epsilon": float(np.mean(epsilons)),
+        # Store locally in strategy (NO global import)
+        self.latest_fit_metrics = {
             "fit_metrics": {
                 i: fit_res.metrics for i, (_, fit_res) in enumerate(results)
-            }
+            },
+            "mean_epsilon": float(np.mean(epsilons))   # 🔥 ADD THIS
         }
+
+        return parameters, {
+            "epsilon": float(np.mean(epsilons))
+        }
+    

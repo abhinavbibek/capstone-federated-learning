@@ -153,11 +153,17 @@ class FLClient(fl.client.NumPyClient):
 
         weights_ndarrays = [val.cpu().numpy() for val in weights.values()]
         fraud_ratio = np.mean(y)
+        # 🔥 FORCE epsilon to safe Python float (CRITICAL)
+        epsilon_value = float(epsilon) if epsilon is not None else 0.0
+
+        # 🔥 DEBUG PRINT (VERY IMPORTANT)
+        print(f"[Client {self.client_id}] EPSILON RETURNED: {epsilon_value}")
+
         return weights_ndarrays, len(self.X), {
             "loss": float(loss),
-            "epsilon": float(epsilon),
+            "epsilon": epsilon_value,
             "fraud_ratio": float(fraud_ratio),
-            "client_id": self.client_id   # 🔥 ADD
+            "client_id": int(self.client_id)   # ensure serializable
         }
 
 

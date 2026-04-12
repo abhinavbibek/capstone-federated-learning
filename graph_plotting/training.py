@@ -1,169 +1,96 @@
-# analysis/plots/plot_grouped_training.py
-
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-import os
+import seaborn as sns
 
-DATASET = "credit"  # change to "adult" when needed
+# =========================
+# STYLE (A* LEVEL)
+# =========================
+sns.set_theme(style="whitegrid", context="paper", font_scale=1.4)
 
-# ==============================
-# METRIC SELECTION
-# ==============================
-if DATASET == "credit":
-    METRIC = "f1"   # 🔥 IMPORTANT
-    ylabel = "F1 Score"
-else:
-    METRIC = "accuracy"
-    ylabel = "Accuracy"
+plt.rcParams.update({
+    "font.family": "serif",
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.linewidth": 1.2,
+})
 
-# ==============================
-# SAVE PATH
-# ==============================
-SAVE_DIR = f"results/plots/{DATASET}/grouped"
-os.makedirs(SAVE_DIR, exist_ok=True)
-
-# ==============================
-# ATTACK GROUPS
-# ==============================
-ATTACKS = {
-    "label_flip": [
-        "baseline",
-        "label_flip_only",
-        "label_flip_median",
-        "label_flip_trimmed",
-        "label_flip_krum",
-        "label_flip_clip",
-        "final_system"
-    ],
-    "targeted_flip": [
-        "baseline",
-        "targeted_flip_only",
-        "targeted_flip_median",
-        "targeted_flip_trimmed",
-        "targeted_flip_krum",
-        "targeted_flip_clip",
-        "final_system"
-    ],
-    "feature_poison": [
-        "baseline",
-        "feature_poison_only",
-        "feature_poison_median",
-        "feature_poison_trimmed",
-        "feature_poison_krum",
-        "feature_poison_clip",
-        "final_system"
-    ],
-    "sign_flip": [
-        "baseline",
-        "sign_flip_only",
-        "sign_flip_median",
-        "sign_flip_trimmed",
-        "sign_flip_krum",
-        "sign_flip_clip",
-        "final_system"
-    ],
-    "scaling": [
-        "baseline",
-        "scaling_only",
-        "scaling_median",
-        "scaling_trimmed",
-        "scaling_krum",
-        "scaling_clip",
-        "final_system"
-    ]
-}
-
-# ==============================
-# UTIL FUNCTIONS
-# ==============================
-def load_metric(exp):
-    with open(f"results/{DATASET}_{exp}.json") as f:
+# =========================
+# LOAD FUNCTION
+# =========================
+def load_history(dataset, exp):
+    path = f"results/{dataset}_{exp}.json"
+    with open(path) as f:
         data = json.load(f)
-    return np.array([d[METRIC] for d in data])
+    
+    rounds = [d["round"] for d in data]
+    acc = [d["accuracy"] for d in data]
+    f1 = [d["f1"] for d in data]
+    
+    return rounds, acc, f1
 
-def ema(x, alpha=0.6):
-    out = []
-    prev = x[0]
-    for val in x:
-        prev = alpha * val + (1 - alpha) * prev
-        out.append(prev)
-    return np.array(out)
 
-# ==============================
-# COLOR SCHEME
-# ==============================
-COLORS = {
-    "baseline": "black",
-    "only": "red",
-    "median": "#1f77b4",
-    "trimmed": "#2ca02c",
-    "krum": "#ff7f0e",
-    "clip": "#9467bd",
-    "final": "#17becf"
+# =========================
+# SMOOTHING (EMA)
+# =========================
+def smooth_curve(values, alpha=0.3):
+    smoothed = []
+    for i, v in enumerate(values):
+        if i == 0:
+            smoothed.append(v)
+        else:
+            smoothed.append(alpha * v + (1 - alpha) * smoothed[-1])
+    return smoothed
+
+
+# =========================
+# SELECT EXPERIMENTS
+# =========================
+experiments = {
+    "Baseline": ("baseline", "solid", 2.5),
+    "Worst Attack": ("sign_flip_only", "dashed", 2.0),
+    "Best Defense": ("label_flip_median", "dashdot", 2.0),
+    "Final System": ("final_system", "solid", 3.5),
 }
 
-# ==============================
-# PLOT
-# ==============================
-for attack, exps in ATTACKS.items():
+# =========================
+# CREATE FIGURE
+# =========================
+fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharex=True)
 
-    plt.figure(figsize=(8,5))
+colors = sns.color_palette("tab10", n_colors=len(experiments))
+# =========================
+# CREDIT FIGURE
+# =========================
+fig, ax = plt.subplots(figsize=(7, 5))
 
-    for exp in exps:
-        y = load_metric(exp)
-        rounds = np.arange(1, len(y)+1)
+for i, (label, (exp, linestyle, lw)) in enumerate(experiments.items()):
+    rounds, _, f1 = load_history("credit", exp)
+    f1_smooth = smooth_curve(f1)
 
-        y_smooth = ema(y)
+    ax.plot(
+        rounds,
+        f1_smooth,
+        label=label,
+        linestyle=linestyle,
+        linewidth=lw,
+        color=colors[i],
+        alpha=0.95
+    )
 
-        std = np.std(y) * 0.15  # replace later with multi-seed
+ax.set_title("Credit Dataset (F1 Score)", fontsize=14, weight="bold")
+ax.set_xlabel("Communication Rounds")
+ax.set_ylabel("F1 Score")
+ax.grid(True, linestyle="--", alpha=0.4)
+ax.minorticks_on()
 
-        # COLOR
-        if exp == "baseline":
-            color = COLORS["baseline"]
-        elif "only" in exp:
-            color = COLORS["only"]
-        elif "median" in exp:
-            color = COLORS["median"]
-        elif "trimmed" in exp:
-            color = COLORS["trimmed"]
-        elif "krum" in exp:
-            color = COLORS["krum"]
-        elif "clip" in exp:
-            color = COLORS["clip"]
-        elif "final" in exp:
-            color = COLORS["final"]
-        else:
-            color = "gray"
+# ✅ Legend per figure
+ax.legend(frameon=False, fontsize=11)
 
-        linestyle = "--" if "only" in exp else "-"
-        linewidth = 2.5 if "final" in exp else 1.8
+plt.tight_layout()
 
-        plt.plot(
-            rounds, y_smooth,
-            label=exp,
-            color=color,
-            linestyle=linestyle,
-            linewidth=linewidth
-        )
+# ✅ Save separately
+plt.savefig("results/credit_training_dynamics.pdf", dpi=600, bbox_inches="tight")
+plt.savefig("results/credit_training_dynamics.png", dpi=600, bbox_inches="tight")
 
-        plt.fill_between(
-            rounds,
-            y_smooth - std,
-            y_smooth + std,
-            color=color,
-            alpha=0.12
-        )
-
-    plt.xlabel("Communication Rounds")
-    plt.ylabel(ylabel)
-    plt.title(f"{ylabel} under {attack.replace('_',' ').title()} Attack")
-
-    plt.grid(alpha=0.3)
-    plt.legend(fontsize=7, ncol=2)
-    plt.tight_layout()
-
-    plt.savefig(f"{SAVE_DIR}/{attack}_{METRIC}.png", dpi=300)
-    plt.close()
-
-print("Grouped plots saved successfully.")
+plt.show()
