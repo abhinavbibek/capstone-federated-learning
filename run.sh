@@ -16,26 +16,27 @@ trap "echo 'Cleaning up...' | tee -a $LOG_FILE; pkill -f fl_server; pkill -f run
 
 
 EXPERIMENTS=(
-"baseline"
+# "baseline"
 
 # # #attack only
-"label_flip_only"
-"targeted_flip_only"
-"feature_poison_only"
+# "label_flip_only"
+# "targeted_flip_only"
+# "feature_poison_only"
 "sign_flip_only"
-"scaling_only"
+# "scaling_only"
 
 # # #attack + defense
-"label_flip_median" "label_flip_trimmed" "label_flip_krum" "label_flip_clip"
-"targeted_flip_median" "targeted_flip_trimmed" "targeted_flip_krum" "targeted_flip_clip"
-"feature_poison_median" "feature_poison_trimmed" "feature_poison_krum" "feature_poison_clip"
-"sign_flip_median" "sign_flip_trimmed" "sign_flip_krum" "sign_flip_clip"
-"scaling_median" "scaling_trimmed" "scaling_krum" "scaling_clip"
+# "label_flip_median" "label_flip_trimmed" "label_flip_krum" "label_flip_clip"
+# "targeted_flip_median" "targeted_flip_trimmed" "targeted_flip_krum" "targeted_flip_clip"
+# "feature_poison_median" "feature_poison_trimmed" "feature_poison_krum" "feature_poison_clip"
+# "sign_flip_median" "sign_flip_trimmed" "sign_flip_krum" "sign_flip_clip"
+# "scaling_median" "scaling_trimmed" "scaling_krum" "scaling_clip"
 
 # # #DP experiments
-"dp_local_eps1" 
-"dp_local_eps2" "dp_local_eps5" 
-"dp_local_adaptive" "dp_server_fixed"
+# "dp_local_eps1" 
+# "dp_local_eps2" 
+# "dp_local_eps5" 
+# "dp_local_adaptive" "dp_server_fixed"
 
 
 # final system experiment
@@ -65,7 +66,7 @@ do
     
     CLIENT_PIDS=()
 
-    GPU_LIST=(0 4 6)   # 🔥 manually choose from nvidia-smi
+    GPU_LIST=(0 3 4)   # 🔥 manually choose from nvidia-smi
     NUM_GPUS=${#GPU_LIST[@]}
 
     for i in {1..10}

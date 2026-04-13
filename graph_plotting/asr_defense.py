@@ -5,7 +5,7 @@ import seaborn as sns
 # =========================
 # STYLE
 # =========================
-sns.set_theme(style="whitegrid", context="paper", font_scale=1.3)
+sns.set_theme(style="whitegrid", context="paper", font_scale=2.3)
 
 plt.rcParams.update({
     "font.family": "serif",
@@ -25,11 +25,9 @@ credit_df = pd.read_csv("results_summary_credit_round_40.csv")
 def extract_asr(df, attack_name):
     data = {}
 
-    # attack baseline
     attack_row = df[df["experiment"].str.contains(f"{attack_name}_only")]
     attack_asr = attack_row["asr"].values[0]
 
-    # defenses
     for defense_key, label in {
         "median": "Median Aggregation",
         "trimmed": "Trimmed Mean",
@@ -40,9 +38,8 @@ def extract_asr(df, attack_name):
         if len(row) > 0:
             data[label] = row["asr"].values[0]
 
-    # final system → rename here
     final_row = df[df["experiment"].str.contains("final_system")]
-    data["Our System"] = final_row["asr"].values[0]
+    data["TAP-FL"] = final_row["asr"].values[0]
 
     return data, attack_asr
 
@@ -52,19 +49,20 @@ def extract_asr(df, attack_name):
 # =========================
 attacks = ["label_flip", "feature_poison", "sign_flip", "targeted_flip"]
 
+
 # =========================
 # PLOT FUNCTION
 # =========================
 def plot_dataset(df, dataset_name):
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     axes = axes.flatten()
 
     palette = {
         "Median Aggregation": "#4C72B0",
         "Trimmed Mean": "#55A868",
         "Krum": "#C44E52",
-        "Our System": "#000000"
+        "TAP-FL": "#000000"
     }
 
     for i, attack in enumerate(attacks):
@@ -78,62 +76,107 @@ def plot_dataset(df, dataset_name):
 
         x = range(len(methods))
 
+        # =========================
+        # BAR PLOT
+        # =========================
         bars = ax.bar(
             x,
             values,
+            width=0.5,
             color=[palette[m] for m in methods],
             alpha=0.9
         )
 
-        # Highlight OUR SYSTEM
+        # Highlight TAP-FL
         for j, m in enumerate(methods):
-            if m == "Our System":
+            if m == "TAP-FL":
                 bars[j].set_linewidth(3)
                 bars[j].set_edgecolor("black")
 
-        # Attack reference line
+        # =========================
+        # ATTACK REFERENCE LINE
+        # =========================
         ax.axhline(
             attack_asr,
             color="red",
             linestyle="--",
-            linewidth=2,
-            label=""
+            linewidth=2
         )
 
-        # Annotate
+        # =========================
+        # VALUE LABELS
+        # =========================
         for j, v in enumerate(values):
-            ax.text(j, v + 0.01, f"{v:.3f}", ha="center", fontsize=9)
+            ax.text(
+                j,
+                v + (max(values) * 0.05),
+                f"{v:.3f}",
+                ha="center",
+                fontsize=24,
+                fontweight="bold"
+            )
 
+        # =========================
+        # TITLES
+        # =========================
         ax.set_title(
             attack.replace("_", " ").title(),
-            fontsize=12,
+            fontsize=26,
             weight="bold"
         )
 
+        # =========================
+        # CLEAN X-AXIS (NO TEXT)
+        # =========================
         ax.set_xticks(x)
-        ax.set_xticklabels(methods, rotation=15)
-        ax.set_ylabel("ASR")
+        ax.set_xticklabels([])   # 🔥 removed long labels
 
+        ax.set_ylabel("ASR", fontsize=26, weight="bold")
+
+        # =========================
+        # LIMITS + GRID
+        # =========================
         ax.set_ylim(0, max(max(values), attack_asr) * 1.25)
+        ax.grid(True, linestyle="--", alpha=0.4)
 
-    fig.suptitle(
-        f"{dataset_name.upper()} — ASR vs Defense",
-        fontsize=16,
-        weight="bold"
-    )
+    # =========================
+    # GLOBAL LEGEND
+    # =========================
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, color=palette[m])
+        for m in palette
+    ]
 
-    # Global legend
-    handles, labels = axes[0].get_legend_handles_labels()
+    labels = list(palette.keys())
+
     fig.legend(
         handles,
         labels,
         loc="upper center",
+        bbox_to_anchor=(0.5, 0.98),   # 🔥 moved DOWN inside figure
         ncol=2,
-        frameon=False
+        fontsize=22,
+        frameon=True
     )
 
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    # =========================
+    # MAIN TITLE
+    # =========================
+    # fig.suptitle(
+    #     f"{dataset_name.upper()} — ASR vs Defense",
+    #     fontsize=32,
+    #     weight="bold",
+    #     y=0.98
+    # )
 
+    # =========================
+    # LAYOUT
+    # =========================
+    plt.tight_layout(rect=[0, 0, 1, 0.87])  # 🔥 more usable space
+
+    # =========================
+    # SAVE
+    # =========================
     plt.savefig(f"results/{dataset_name}_asr_vs_defense.pdf", dpi=600)
     plt.savefig(f"results/{dataset_name}_asr_vs_defense.png", dpi=600)
 

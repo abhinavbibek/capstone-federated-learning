@@ -76,10 +76,23 @@ def compute_shap(model, X, exp_name, sample_size=100):
 
     shap_values = np.array(shap_values)
 
+    # 🔥 FIX: ensure proper shape
+    if shap_values is None or len(shap_values) == 0:
+        raise ValueError("SHAP returned empty values")
+
+    # Handle shape safely
     if len(shap_values.shape) == 3:
         shap_values = shap_values.squeeze(-1)
 
-    global_importance = np.mean(np.abs(shap_values), axis=0).reshape(-1)
+    # 🔥 FINAL SAFETY
+    if len(shap_values.shape) != 2:
+        raise ValueError(f"Unexpected SHAP shape: {shap_values.shape}")
+
+    global_importance = np.mean(np.abs(shap_values), axis=0)
+    logger.info(f"SHAP shape: {shap_values.shape}")
+    logger.info(f"Global importance shape: {global_importance.shape}")
+    # 🔥 ensure 1D
+    global_importance = np.array(global_importance).flatten()
 
     logger.info(f"[{exp_name}] SHAP computation completed")
 
@@ -129,7 +142,15 @@ def faithfulness_test(model, X, shap_values, k=5):
 
 def perturbation_stability(model, X, shap_values):
     X_noisy = X + np.random.normal(0, 0.01, X.shape)
-    new_shap, _ = compute_shap(model, X_noisy, "temp")
+    try:
+        new_shap, _ = compute_shap(model, X_noisy, "temp")
+
+        if new_shap is None or len(new_shap) == 0:
+            return 0.0
+
+    except Exception as e:
+        logger.warning(f"Perturbation stability failed: {e}")
+        return 0.0
 
     return spearman_corr(
         np.mean(np.abs(shap_values), axis=0),
@@ -160,6 +181,21 @@ def run_shap_analysis(exp_name, model, dataset):
     logger.info(f"[{exp_name}] Data loaded → shape={X.shape}")
 
     shap_vals, global_vals = compute_shap(model, X, exp_name)
+    # =========================
+    # 🔥 SAFETY CHECK (CRITICAL)
+    # =========================
+    if shap_vals is None or len(shap_vals) == 0:
+        logger.error(f"[{exp_name}] SHAP values are empty → skipping")
+        return None, None
+
+    if global_vals is None or len(global_vals) == 0:
+        logger.error(f"[{exp_name}] Global importance empty → skipping")
+        return None, None
+
+    # Check NaNs
+    if np.isnan(global_vals).any():
+        logger.error(f"[{exp_name}] NaNs in global importance → fixing")
+        global_vals = np.nan_to_num(global_vals)
 
     logger.info(f"[{exp_name}] Computing metrics")
 
@@ -190,7 +226,11 @@ def run_shap_analysis(exp_name, model, dataset):
     try:
         with open(f"data/{dataset}_test.pkl", "rb") as f:
             data = pickle.load(f)
-        feature_names = data.get("feature_names", [f"f{i}" for i in range(X.shape[1])])
+        feature_names = data.get("feature_names", None)
+
+        if feature_names is None or len(feature_names) != X.shape[1]:
+            logger.warning(f"[{exp_name}] Feature names mismatch → using fallback")
+            feature_names = [f"f{i}" for i in range(X.shape[1])]
     except:
         feature_names = [f"f{i}" for i in range(X.shape[1])]
 
@@ -246,11 +286,72 @@ def run_shap_analysis(exp_name, model, dataset):
 
     logger.info(f"[{exp_name}] Generating SHAP summary plot")
 
-    plt.figure()
-    shap.summary_plot(shap_vals, X[:shap_vals.shape[0]], show=False)
-    plt.savefig(f"results/shap/{dataset}_{exp_name}_summary.png")
-    plt.close()
+   # =========================
+    # LARGE FONT SHAP PLOT (FIXED - NO GAPS)
+    # =========================
+    plt.figure(figsize=(10, 8))
 
+    # 🔥 Strong font scaling (paper-ready)
+    plt.rcParams.update({
+        "font.size": 26,
+        "axes.labelsize": 26,
+        "xtick.labelsize": 26,
+        "ytick.labelsize": 26,
+    })
+
+    # SHAP plot
+    shap.summary_plot(
+        shap_vals,
+        X[:shap_vals.shape[0]],
+        show=False,
+        plot_size=None  # IMPORTANT
+    )
+    # =========================
+    # 🔥 FIX OUTLIER STRETCH
+    # =========================
+
+    # Flatten SHAP values
+    vals = shap_vals.flatten()
+
+    # Compute robust limits (ignore extreme outliers)
+    xmin = np.percentile(vals, 1)
+    xmax = np.percentile(vals, 99)
+
+    plt.xlim(xmin, xmax)
+    plt.tight_layout(pad=0.5)
+    # 🔥 Reduce LEFT GAP + bring COLORBAR closer
+    plt.gcf().subplots_adjust(
+        left=0.28,   # ↓ reduce empty left space (KEY FIX)
+        right=0.92,  # ↓ bring colorbar closer
+        top=0.95,
+        bottom=0.12
+    )
+
+    # 🔥 Bigger labels (force override)
+    plt.xlabel("SHAP value (impact on model output)", fontsize=26)
+    plt.ylabel("Features", fontsize=26)
+
+    # 🔥 Make colorbar text bigger
+    cbar = plt.gcf().axes[-1]  # last axis is colorbar
+    cbar.tick_params(labelsize=24)
+
+
+    # SAVE (no extra padding)
+    plt.savefig(
+        f"results/shap/{dataset}_{exp_name}_summary.pdf",
+        dpi=600,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    plt.savefig(
+        f"results/shap/{dataset}_{exp_name}_summary.png",
+        dpi=600,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    plt.close()
     logger.info(f"[{exp_name}] Plot saved")
 
     logger.info(f"========== END: {exp_name} ==========\n")

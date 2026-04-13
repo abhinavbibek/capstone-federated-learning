@@ -66,6 +66,7 @@ class FLClient(fl.client.NumPyClient):
 
         self.model.to(device)
         self.set_parameters(parameters)
+        global_weights = [param.clone().detach() for param in self.model.parameters()]
 
         attack_type = self.exp_config["attack"]
 
@@ -128,7 +129,9 @@ class FLClient(fl.client.NumPyClient):
                 LOCAL_EPOCHS,
                 LEARNING_RATE,
                 BATCH_SIZE,
-                dataset=self.dataset
+                dataset=self.dataset,
+                global_weights=global_weights if self.exp_config.get("defense") == "fedprox" else None,
+                mu=0.01
             )
             epsilon = 0.0
 

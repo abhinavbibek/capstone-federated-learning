@@ -204,29 +204,48 @@ class RobustFedAvg(fl.server.strategy.FedAvg):
         #         losses = np.array(filtered_losses)
         #         trust_scores = filtered_trust
 
+        # ================= FLTRUST =================
+        if self.method == "fltrust":
 
+            # Normalize updates
+            normalized_weights = []
+            for client_weights in weights:
+                norm = compute_norm(client_weights)
+                normalized_weights.append([w / (norm + 1e-6) for w in client_weights])
+
+            # Reference model (mean)
+            ref = []
+            for layer in zip(*normalized_weights):
+                ref.append(np.mean(np.stack(layer, axis=0), axis=0))
+
+            # Cosine similarity trust
+            trust_scores = []
+            for client_weights in normalized_weights:
+                dot = sum(np.sum(w1 * w2) for w1, w2 in zip(client_weights, ref))
+                norm1 = compute_norm(client_weights)
+                norm2 = compute_norm(ref)
+                trust = dot / (norm1 * norm2 + 1e-6)
+                trust_scores.append(max(trust, 0))
+
+            trust_scores = np.array(trust_scores)
+            trust_scores /= (np.sum(trust_scores) + 1e-6)
+
+            client_weights = trust_scores
         # ================= CLIENT WEIGHTS =================
-        loss_weights = np.exp(-losses)
-        loss_weights /= np.sum(loss_weights)
+        # ================= CLIENT WEIGHTS =================
 
-        # ================= CLASS IMBALANCE FIX =================
+        if self.method == "fltrust":
+            # use only trust-based weights
+            client_weights = trust_scores
 
-        # 🔥 DISABLE imbalance boost (handled at client level)
-        if self.dataset == "credit":
-            pass
-
-        # if self.use_trust:
-        #     client_weights = 0.85 * loss_weights + 0.15 * trust_scores
-        # else:
-        #     client_weights = loss_weights
-
-        # client_weights /= np.sum(client_weights)
-        # 🔥 SIMPLER + STABLE TRUST INTEGRATION
-        if self.use_trust:
-            # client_weights = 0.9 * loss_weights + 0.1 * trust_scores
-            client_weights = 0.6 * loss_weights + 0.4 * trust_scores
         else:
-            client_weights = loss_weights
+            loss_weights = np.exp(-losses)
+            loss_weights /= np.sum(loss_weights)
+
+            if self.use_trust:
+                client_weights = 0.9 * loss_weights + 0.1 * trust_scores
+            else:
+                client_weights = loss_weights
 
         client_weights /= np.sum(client_weights)
         print(f"[DEBUG] Trust scores: {trust_scores}")

@@ -22,7 +22,7 @@ class FocalLoss(nn.Module):
         focal_weight = self.alpha * (1 - pt) ** self.gamma
         return (focal_weight * bce_loss).mean()
 
-def train_local(model, X, y, epochs, lr, batch_size, dataset):
+def train_local(model, X, y, epochs, lr, batch_size, dataset, global_weights=None, mu=0.01):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -106,6 +106,16 @@ def train_local(model, X, y, epochs, lr, batch_size, dataset):
             logits = model(batch_x)
 
             loss = criterion(logits, batch_y)
+
+            # =========================
+            # FEDPROX PROXIMAL TERM
+            # =========================
+            if global_weights is not None:
+                prox_loss = 0.0
+                for param, global_param in zip(model.parameters(), global_weights):
+                    prox_loss += torch.norm(param - global_param.to(device)) ** 2
+
+                loss += (mu / 2) * prox_loss
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

@@ -414,7 +414,7 @@ if __name__ == "__main__":
 
 
 
-    elif defense in ["median", "trimmed_mean", "krum", "clipping", "trust"] \
+    elif defense in ["median", "trimmed_mean", "krum", "clipping", "trust", "fltrust"] \
         or exp_config.get("dp") in ["local", "local_adaptive"]:
         print(f"Using Robust Strategy: {defense}")
 
