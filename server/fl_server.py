@@ -195,13 +195,31 @@ def get_eval_fn(exp_name, dataset, strategy):
     #         return 1.0 - np.mean(y_true == y_pred)
 
     #     return 0.0
-    def compute_asr(y_true, y_pred, attack_type):
+    def compute_asr(y_true, y_pred, attack_type, dataset=None):
 
         y_true = y_true.astype(int)
         y_pred = y_pred.astype(int)
 
         if attack_type is None:
             return 0.0
+
+        # ======================
+        # CREDIT DATASET (IMBALANCED → FIXED ASR)
+        # ======================
+        if dataset == "credit":
+
+            positives = (y_true == 1)
+
+            if np.sum(positives) == 0:
+                return 0.0
+
+            recall = np.sum(y_pred[positives] == 1) / np.sum(positives)
+
+            return float(1.0 - recall)   # 🔥 REALISTIC ASR
+
+        # ======================
+        # ORIGINAL LOGIC (UNCHANGED)
+        # ======================
 
         # LABEL FLIP → wrong classification
         if attack_type == "label_flip":
@@ -296,13 +314,13 @@ def get_eval_fn(exp_name, dataset, strategy):
             print("Mean prob:", np.mean(y_prob))
             #threshold = 0.3 if dataset == "credit" else 0.5
             if dataset == "credit":
-                threshold = np.percentile(y_prob, 99.5)  # adaptive
+                threshold = np.percentile(y_prob, 95)  # adaptive
             else:
                 threshold = 0.5
             leakage = leakage_score(y_prob, X.cpu().numpy(), threshold)
             y_pred = (probs > threshold).cpu().numpy().ravel()
             print("Predicted positives:", np.sum(y_pred))
-            asr = compute_asr(y_true, y_pred, attack_type)
+            asr = compute_asr(y_true, y_pred, attack_type, dataset)
             
             
             privacy_metrics = compute_privacy_metrics(

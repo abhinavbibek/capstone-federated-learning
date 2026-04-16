@@ -289,14 +289,15 @@ def run_shap_analysis(exp_name, model, dataset):
    # =========================
     # LARGE FONT SHAP PLOT (FIXED - NO GAPS)
     # =========================
+    # =========================
+    # 🔥 FINAL SHAP PLOT (PUBLICATION READY)
+    # =========================
     plt.figure(figsize=(10, 8))
 
-    # 🔥 Strong font scaling (paper-ready)
+    # Base font scaling
     plt.rcParams.update({
-        "font.size": 26,
+        "font.size": 24,
         "axes.labelsize": 26,
-        "xtick.labelsize": 26,
-        "ytick.labelsize": 26,
     })
 
     # SHAP plot
@@ -304,39 +305,60 @@ def run_shap_analysis(exp_name, model, dataset):
         shap_vals,
         X[:shap_vals.shape[0]],
         show=False,
-        plot_size=None  # IMPORTANT
+        plot_size=None
     )
+
+    # =========================
+    # 🔥 FORCE AXIS TICK SIZES (CRITICAL FIX)
+    # =========================
+    ax = plt.gca()
+
+    # X-axis (SHAP value numbers)
+    ax.tick_params(axis='x', labelsize=26, pad=6)
+
+    # Y-axis (feature names)
+    ax.tick_params(axis='y', labelsize=26, pad=4)
+
     # =========================
     # 🔥 FIX OUTLIER STRETCH
     # =========================
-
-    # Flatten SHAP values
     vals = shap_vals.flatten()
-
-    # Compute robust limits (ignore extreme outliers)
     xmin = np.percentile(vals, 1)
     xmax = np.percentile(vals, 99)
-
     plt.xlim(xmin, xmax)
-    plt.tight_layout(pad=0.5)
-    # 🔥 Reduce LEFT GAP + bring COLORBAR closer
+
+    # =========================
+    # 🔥 LABELS (WITH SAFE SPACING)
+    # =========================
+    plt.xlabel("SHAP value (impact on model output)", fontsize=26, labelpad=12)
+    plt.ylabel("Features", fontsize=26, labelpad=14)
+
+    # =========================
+    # 🔥 COLORBAR FIX (RIGHT SIDE TEXT)
+    # =========================
+    cbar = plt.gcf().axes[-1]
+
+    # Tick size (numbers)
+    cbar.tick_params(labelsize=26)
+
+    # Label size ("Feature value")
+    cbar.set_ylabel("Feature value", fontsize=24, labelpad=10)
+
+    # =========================
+    # 🔥 LAYOUT FIX (NO OVERLAP)
+    # =========================
     plt.gcf().subplots_adjust(
-        left=0.28,   # ↓ reduce empty left space (KEY FIX)
-        right=0.92,  # ↓ bring colorbar closer
+        left=0.30,   # prevent overlap with "Features"
+        right=0.90,  # bring colorbar closer but safe
         top=0.95,
-        bottom=0.12
+        bottom=0.14  # prevent overlap with x-label
     )
 
-    # 🔥 Bigger labels (force override)
-    plt.xlabel("SHAP value (impact on model output)", fontsize=26)
-    plt.ylabel("Features", fontsize=26)
+    plt.tight_layout(pad=0.5)
 
-    # 🔥 Make colorbar text bigger
-    cbar = plt.gcf().axes[-1]  # last axis is colorbar
-    cbar.tick_params(labelsize=24)
-
-
-    # SAVE (no extra padding)
+    # =========================
+    # SAVE (HIGH QUALITY)
+    # =========================
     plt.savefig(
         f"results/shap/{dataset}_{exp_name}_summary.pdf",
         dpi=600,

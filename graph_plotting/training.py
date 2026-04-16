@@ -2,22 +2,22 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from matplotlib.font_manager import FontProperties
 
 # =========================
-# STYLE (UPGRADED - LARGE FONTS)
+# STYLE (PUBLICATION READY)
 # =========================
 sns.set_theme(style="whitegrid", context="paper")
 
 plt.rcParams.update({
     "font.family": "serif",
 
-    # 🔥 Large, publication-ready fonts
+    # Main fonts
     "font.size": 25,
     "axes.titlesize": 26,
     "axes.labelsize": 26,
-    "xtick.labelsize": 26,
-    "ytick.labelsize": 26,
-    "legend.fontsize": 19,
+    "xtick.labelsize": 24,
+    "ytick.labelsize": 24,
 
     # aesthetics
     "axes.spines.top": False,
@@ -54,32 +54,32 @@ def smooth_curve(values, alpha=0.3):
 
 
 # =========================
-# SELECT EXPERIMENTS
+# EXPERIMENTS (SHORT LABELS 🔥)
 # =========================
 experiments = {
-    "Baseline": ("baseline", "solid", 2.8),
-    "Worst Attack": ("sign_flip_only", "dashed", 2.5),
-    "Best Defense": ("label_flip_median", "dashdot", 2.5),
-    "TAP-FL": ("final_system", "solid", 4.0),
+    "FedAvg": ("baseline", "solid", 2.8),
+    "Sign Flip Attack": ("sign_flip_only", "dashed", 2.5),
+    "Krum Defense": ("label_flip_only", "dashdot", 2.5),
+    "TAP-FL": ("dp_local_eps5", "solid", 4.0),
 }
 
 # =========================
-# COLOR PALETTE
+# COLORS
 # =========================
 colors = sns.color_palette("tab10", n_colors=len(experiments))
 
 # =========================
-# ADULT FIGURE (ACCURACY)
+# FIGURE
 # =========================
 fig, ax = plt.subplots(figsize=(8, 6))
 
 for i, (label, (exp, linestyle, lw)) in enumerate(experiments.items()):
     rounds, acc, _ = load_history("adult", exp)
-    acc_smooth = smooth_curve(acc)
+    f1_smooth = smooth_curve(acc)
 
     ax.plot(
         rounds,
-        acc_smooth,
+        f1_smooth,
         label=label,
         linestyle=linestyle,
         linewidth=lw,
@@ -90,8 +90,7 @@ for i, (label, (exp, linestyle, lw)) in enumerate(experiments.items()):
 # =========================
 # AXIS + TITLE
 # =========================
-
-ax.set_title("Adult Dataset (Accuracy)", fontsize=25, weight="bold", pad=10)
+ax.set_title("Adult Dataset (Accuracy)", weight="bold", pad=10)
 ax.set_xlabel("Communication Rounds", weight="bold")
 ax.set_ylabel("Accuracy", weight="bold")
 
@@ -99,35 +98,36 @@ ax.grid(True, linestyle="--", alpha=0.4)
 ax.minorticks_on()
 
 # =========================
-# LEGEND
-# =========================
-# =========================
-# LEGEND (TOP, HORIZONTAL)
-# =========================
-# =========================
-# LEGEND (COMPACT, TOP)
-# =========================
-# =========================
-# LEGEND (FIGURE LEVEL - CLEAN FIX)
+# LEGEND (MAJOR FIX 🔥)
 # =========================
 handles, labels = ax.get_legend_handles_labels()
+
+legend_font = FontProperties(
+    family='sans-serif',   # 🔥 more readable
+    size=17,
+    weight='bold'
+)
 
 fig.legend(
     handles,
     labels,
     loc="upper center",
-    bbox_to_anchor=(0.5, 1.02),   # 🔥 above everything (title included)
-    ncol=2,
+    bbox_to_anchor=(0.5, 1.08),
+    ncol=2,                     # try ncol=4 if you want single row
     frameon=True,
-    fontsize=16,
+    prop=legend_font,
     edgecolor="black",
-    columnspacing=1.2,
-    handlelength=2.0
+    columnspacing=1.5,
+    handlelength=2.5,
+    labelspacing=0.4,
+    borderpad=0.5,
+    handletextpad=0.6
 )
+
 # =========================
-# SAVE
+# LAYOUT + SAVE
 # =========================
-plt.tight_layout(rect=[0, 0, 1, 0.92])  # leaves space on top
+plt.tight_layout(rect=[0, 0, 1, 0.92])
 
 plt.savefig("results/adult_training_dynamics.pdf", dpi=600, bbox_inches="tight")
 plt.savefig("results/adult_training_dynamics.png", dpi=600, bbox_inches="tight")

@@ -1,4 +1,6 @@
-# non_iid_splits.py
+
+# non_iid_splits.py 
+
 import pickle
 import numpy as np
 import os
@@ -6,10 +8,10 @@ import os
 # ==============================
 # SELECT DATASET
 # ==============================
-DATASET = "adult"   # "adult" or "credit"
+DATASET = "credit"   # "adult" or "credit"
 
 print("="*60)
-print(f"CREATING NON-IID CLIENT DATA SPLITS ({DATASET.upper()})")
+print(f"DIRICHLET NON-IID SPLIT ({DATASET.upper()})")
 print("="*60)
 
 # ==============================
@@ -19,12 +21,13 @@ if DATASET == "adult":
     with open('data/adult_train.pkl', 'rb') as f:
         data = pickle.load(f)
     save_path = "data"
+    alpha = 0.5   # moderate heterogeneity
 
 elif DATASET == "credit":
     with open('data/credit_train.pkl', 'rb') as f:
         data = pickle.load(f)
     save_path = "data"
-
+    alpha = 0.05  # strong heterogeneity (important)
 
 X = data['X'].values if hasattr(data['X'], "values") else data['X']
 y = data['y']
@@ -32,96 +35,121 @@ y = data['y']
 n_clients = 10
 samples_per_client = 2000
 
-# ==============================
-# CLASS SPLIT
-# ==============================
-idx_class0 = np.where(y == 0)[0]
-idx_class1 = np.where(y == 1)[0]
-
 np.random.seed(42)
-np.random.shuffle(idx_class0)
-np.random.shuffle(idx_class1)
-
-splits_class0 = np.array_split(idx_class0, n_clients)
-splits_class1 = np.array_split(idx_class1, n_clients)
 
 # ==============================
-# DISTRIBUTIONS
+# CLASS INDICES
 # ==============================
-if DATASET == "adult":
-    distributions = [
-        (0.7, 0.3), (0.65, 0.35), (0.6, 0.4), (0.55, 0.45),
-        (0.5, 0.5), (0.45, 0.55), (0.4, 0.6), (0.35, 0.65),
-        (0.3, 0.7), (0.5, 0.5),
-    ]
+class_indices = {
+    0: np.where(y == 0)[0],
+    1: np.where(y == 1)[0]
+}
 
-elif DATASET == "credit":
-    # REALISTIC + CONTROLLED NON-IID
-    distributions = [
-        (0.998, 0.002),  # very low fraud
-        (0.997, 0.003),
-        (0.996, 0.004),
-        (0.995, 0.005),
+# Shuffle
+for c in class_indices:
+    np.random.shuffle(class_indices[c])
 
-        (0.993, 0.007),  # medium
-        (0.990, 0.010),
-        (0.985, 0.015),
+# ==============================
+# DIRICHLET SPLIT FUNCTION
+# ==============================
+def dirichlet_partition(class_indices, n_clients, alpha):
+    client_indices = {i: [] for i in range(n_clients)}
 
-        (0.980, 0.020),  # higher (but still realistic)
-        (0.975, 0.025),
-        (0.970, 0.030),
-    ]
+    for cls, indices in class_indices.items():
 
-results = []
+        proportions = np.random.dirichlet(alpha * np.ones(n_clients))
+
+        # Convert proportions → counts
+        counts = (proportions * len(indices)).astype(int)
+
+        # Fix rounding issue
+        diff = len(indices) - np.sum(counts)
+        for i in range(diff):
+            counts[i % n_clients] += 1
+
+        start = 0
+        for client_id in range(n_clients):
+            client_indices[client_id].extend(
+                indices[start:start + counts[client_id]]
+            )
+            start += counts[client_id]
+
+    return client_indices
+
+
+# ==============================
+# GENERATE SPLIT (WITH VALIDATION)
+# ==============================
+def generate_valid_split():
+    for attempt in range(20):  # retry if bad split
+
+        client_indices = dirichlet_partition(class_indices, n_clients, alpha)
+
+        valid = True
+
+        for cid in range(n_clients):
+            labels = y[client_indices[cid]]
+
+            if len(labels) == 0:
+                valid = False
+                break
+
+            fraud_ratio = np.mean(labels)
+
+            if DATASET == "credit":
+                # avoid degenerate clients
+                if fraud_ratio < 0.0005 or fraud_ratio > 0.05:
+                    valid = False
+                    break
+
+            else:
+                # adult (balanced-ish)
+                if fraud_ratio < 0.05 or fraud_ratio > 0.95:
+                    valid = False
+                    break
+
+        if valid:
+            print(f"Valid split found (attempt {attempt+1})")
+            return client_indices
+
+    raise RuntimeError("Failed to generate valid Dirichlet split")
+
+
+client_indices = generate_valid_split()
+
+# ==============================
+# FIX SAMPLES PER CLIENT
+# ==============================
+def adjust_client_size(indices, target_size):
+    indices = np.array(indices)
+
+    if len(indices) >= target_size:
+        return np.random.choice(indices, target_size, replace=False)
+    else:
+        extra = np.random.choice(indices, target_size - len(indices), replace=True)
+        return np.concatenate([indices, extra])
+
+
 # ==============================
 # CREATE CLIENT DATA
 # ==============================
-for i, (ratio0, ratio1) in enumerate(distributions):
+os.makedirs(save_path, exist_ok=True)
 
-    client_id = i + 1
+for cid in range(n_clients):
 
-    n0 = int(samples_per_client * ratio0)
-    n1 = int(samples_per_client * ratio1)
+    indices = adjust_client_size(client_indices[cid], samples_per_client)
 
-    def sample_safe(arr, n):
-        if len(arr) == 0:
-            return np.array([], dtype=int)
+    client_X = X[indices].astype('float32')
+    client_y = y[indices]
 
-        if len(arr) >= n:
-            return np.random.choice(arr, n, replace=False)
-        else:
-            # instead of heavy duplication → take all + slight resample
-            extra = np.random.choice(arr, n - len(arr), replace=True)
-            return np.concatenate([arr, extra])
-
-    client_idx0 = sample_safe(splits_class0[i], n0)
-    client_idx1 = sample_safe(splits_class1[i], n1)
-
-    client_indices = np.concatenate([client_idx0, client_idx1])
-    np.random.shuffle(client_indices)
-
-    client_X = X[client_indices].astype('float32')
-    client_y = y[client_indices]
-
-    os.makedirs(save_path, exist_ok=True)
-    with open(f'{save_path}/{DATASET}_client_{client_id}.pkl', 'wb') as f:
+    with open(f'{save_path}/{DATASET}_client_{cid+1}.pkl', 'wb') as f:
         pickle.dump({'X': client_X, 'y': client_y}, f)
-    
 
-    print(f"Client {client_id}: Class0={sum(client_y==0)}, Class1={sum(client_y==1)}")
-    c0 = sum(client_y == 0)
-    c1 = sum(client_y == 1)
-    total = len(client_y)
+    print(
+        f"Client {cid+1}: "
+        f"Class0={sum(client_y==0)}, "
+        f"Class1={sum(client_y==1)}, "
+        f"Ratio={np.mean(client_y):.4f}"
+    )
 
-    p0 = (c0 / total) * 100
-    p1 = (c1 / total) * 100
-
-    results.append((client_id, p0, p1))
-
-    print(f"Client {client_id}: Class0={p0:.2f}%, Class1={p1:.2f}%")
-
-# SAVE FOR PAPER
-import pandas as pd
-df = pd.DataFrame(results, columns=["Client", "Class0 (%)", "Class1 (%)"])
-df.to_csv(f"results/{DATASET}_noniid_summary.csv", index=False)
-print("\n NON-IID SPLIT COMPLETED")
+print("\n DIRICHLET NON-IID SPLIT COMPLETED")

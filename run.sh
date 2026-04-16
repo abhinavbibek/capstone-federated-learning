@@ -22,15 +22,15 @@ EXPERIMENTS=(
 # "label_flip_only"
 # "targeted_flip_only"
 # "feature_poison_only"
-"sign_flip_only"
+# "sign_flip_only"
 # "scaling_only"
 
 # # #attack + defense
-# "label_flip_median" "label_flip_trimmed" "label_flip_krum" "label_flip_clip"
-# "targeted_flip_median" "targeted_flip_trimmed" "targeted_flip_krum" "targeted_flip_clip"
-# "feature_poison_median" "feature_poison_trimmed" "feature_poison_krum" "feature_poison_clip"
-# "sign_flip_median" "sign_flip_trimmed" "sign_flip_krum" "sign_flip_clip"
-# "scaling_median" "scaling_trimmed" "scaling_krum" "scaling_clip"
+"label_flip_median" "label_flip_trimmed" "label_flip_krum"
+"targeted_flip_median" "targeted_flip_trimmed" "targeted_flip_krum"
+"feature_poison_median" "feature_poison_trimmed" "feature_poison_krum" 
+"sign_flip_median" "sign_flip_trimmed" "sign_flip_krum"
+# "scaling_median" "scaling_trimmed" "scaling_krum"
 
 # # #DP experiments
 # "dp_local_eps1" 
@@ -41,6 +41,8 @@ EXPERIMENTS=(
 
 # final system experiment
 "final_system"
+"final_system_targeted" 
+"final_system_feature" "final_system_sign"
 )
 
 
@@ -66,7 +68,7 @@ do
     
     CLIENT_PIDS=()
 
-    GPU_LIST=(0 3 4)   # 🔥 manually choose from nvidia-smi
+    GPU_LIST=(0 4 6)   # 🔥 manually choose from nvidia-smi
     NUM_GPUS=${#GPU_LIST[@]}
 
     for i in {1..10}

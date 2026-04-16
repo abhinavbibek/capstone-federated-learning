@@ -99,6 +99,27 @@ EXPERIMENTS = {
         "noise": 1.0,
         "clip": 1.0
     },
+    "final_system_sign": {
+        "attack": "sign_flip",
+        "dp": "local",
+        "defense": "trust",  
+        "noise": 1.0,
+        "clip": 1.0
+    },
+    "final_system_feature": {
+        "attack": "feature_poison",
+        "dp": "local",
+        "defense": "trust",  
+        "noise": 1.0,
+        "clip": 1.0
+    },
+    "final_system_targeted": {
+        "attack": "targeted_flip",
+        "dp": "local",
+        "defense": "trust",  
+        "noise": 1.0,
+        "clip": 1.0
+    },
     "fedprox": {
         "attack": None,
         "defense": "fedprox"

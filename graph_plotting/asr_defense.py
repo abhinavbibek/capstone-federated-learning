@@ -25,9 +25,15 @@ credit_df = pd.read_csv("results_summary_credit_round_40.csv")
 def extract_asr(df, attack_name):
     data = {}
 
+    # =========================
+    # ATTACK-ONLY BASELINE
+    # =========================
     attack_row = df[df["experiment"].str.contains(f"{attack_name}_only")]
     attack_asr = attack_row["asr"].values[0]
 
+    # =========================
+    # DEFENSE METHODS
+    # =========================
     for defense_key, label in {
         "median": "Median Aggregation",
         "trimmed": "Trimmed Mean",
@@ -38,8 +44,25 @@ def extract_asr(df, attack_name):
         if len(row) > 0:
             data[label] = row["asr"].values[0]
 
-    final_row = df[df["experiment"].str.contains("final_system")]
-    data["TAP-FL"] = final_row["asr"].values[0]
+    # =========================
+    # TAP-FL (CORRECT MAPPING)
+    # =========================
+    tapfl_map = {
+        "label_flip": "final_system",
+        "sign_flip": "final_system_sign",
+        "feature_poison": "final_system_feature",
+        "targeted_flip": "final_system_targeted"
+    }
+
+    exp_name = tapfl_map.get(attack_name)
+
+    if exp_name is not None:
+        final_row = df[df["experiment"].str.contains(exp_name)]
+
+        if len(final_row) > 0:
+            data["TAP-FL"] = final_row["asr"].values[0]
+        else:
+            print(f"[WARNING] Missing {exp_name} in CSV")
 
     return data, attack_asr
 
@@ -96,12 +119,12 @@ def plot_dataset(df, dataset_name):
         # =========================
         # ATTACK REFERENCE LINE
         # =========================
-        ax.axhline(
-            attack_asr,
-            color="red",
-            linestyle="--",
-            linewidth=2
-        )
+        # ax.axhline(
+        #     attack_asr,
+        #     color="red",
+        #     linestyle="--",
+        #     linewidth=2
+        # )
 
         # =========================
         # VALUE LABELS
