@@ -7,17 +7,6 @@ def label_flip(y, flip_ratio=0.6):
     y[mask] = 1 - y[mask]
     return y
 
-# def targeted_label_flip(y):
-#     y = y.copy()
-#     y[y == 1] = 0
-#     return y
-
-# def targeted_label_flip(y):
-#     y = y.copy()
-#     mask = (y == 1)
-#     y[mask] = 0
-#     return y
-
 def targeted_label_flip(y, ratio=0.5):
     y = y.copy()
     idx = np.where(y == 1)[0]

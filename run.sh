@@ -16,13 +16,13 @@ trap "echo 'Cleaning up...' | tee -a $LOG_FILE; pkill -f fl_server; pkill -f run
 
 
 EXPERIMENTS=(
-# "baseline"
+"baseline"
 
 # # #attack only
-# "label_flip_only"
-# "targeted_flip_only"
-# "feature_poison_only"
-# "sign_flip_only"
+"label_flip_only"
+"targeted_flip_only"
+"feature_poison_only"
+"sign_flip_only"
 # "scaling_only"
 
 # # #attack + defense
@@ -33,16 +33,18 @@ EXPERIMENTS=(
 # "scaling_median" "scaling_trimmed" "scaling_krum"
 
 # # #DP experiments
-# "dp_local_eps1" 
-# "dp_local_eps2" 
-# "dp_local_eps5" 
-# "dp_local_adaptive" "dp_server_fixed"
+"dp_local_eps1" 
+"dp_local_eps2" 
+"dp_local_eps5" 
+"dp_local_adaptive" 
+# "dp_server_fixed"
 
 
 # final system experiment
 "final_system"
 "final_system_targeted" 
-"final_system_feature" "final_system_sign"
+"final_system_feature" 
+"final_system_sign"
 )
 
 
@@ -68,7 +70,7 @@ do
     
     CLIENT_PIDS=()
 
-    GPU_LIST=(0 4 6)   # 🔥 manually choose from nvidia-smi
+    GPU_LIST=(0 3 4 5)   # 🔥 manually choose from nvidia-smi
     NUM_GPUS=${#GPU_LIST[@]}
 
     for i in {1..10}

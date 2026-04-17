@@ -4,57 +4,35 @@ import pickle
 import os
 from sklearn.model_selection import train_test_split
 
-# ==============================
-# SELECT DATASET
-# ==============================
-DATASET = "credit"   # options: "adult", "credit"
+DATASET = "credit"   # credit or adult"
 
-# ==============================
-# UCI ADULT (UNCHANGED)
-# ==============================
+# UCI Adult Dataset
 if DATASET == "adult":
-
-    print("="*60)
-    print("RESEARCH-GRADE PREPROCESSING: UCI ADULT")
-    print("="*60)
-
+    print("Preprocessing : UCI Adult")
     url = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data"
-
     columns = ['age', 'workclass', 'fnlwgt', 'education', 'education_num',
                'marital_status', 'occupation', 'relationship', 'race', 'sex',
                'capital_gain', 'capital_loss', 'hours_per_week', 'native_country', 'income']
-
     df = pd.read_csv(url, names=columns, sep=',\s*',
                      engine='python', na_values='?')
-
     print(f"Original samples: {len(df)}")
-
     df = df.dropna()
     print(f"After cleaning: {len(df)}")
-
     df['income'] = df['income'].apply(lambda x: 1 if '>50K' in x else 0)
-
     X = df.drop('income', axis=1)
     y = df['income'].values
-
-    print("\n🔧 Applying one-hot encoding...")
+    print("\nApplying one-hot encoding...")
     X = pd.get_dummies(X)
     X = X.astype('float32')
-
     feature_names = X.columns.tolist()
-
     print(f"Total features after encoding: {len(feature_names)}")
     print("\nSkipping scaling at global level (will scale per client)")
-
     print(f"Final shape: {X.shape}")
-
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
-
     print(f"\nTrain shape: {X_train.shape}")
     print(f"Test shape: {X_test.shape}")
-
     os.makedirs('data', exist_ok=True)
 
     with open('data/adult_train.pkl', 'wb') as f:
@@ -63,58 +41,32 @@ if DATASET == "adult":
     with open('data/adult_test.pkl', 'wb') as f:
         pickle.dump({'X': X_test, 'y': y_test, 'feature_names': feature_names}, f)
 
-    print("\nDATA READY")
 
-
-# ==============================
-# CREDIT CARD FRAUD (NEW BLOCK)
-# ==============================
+# Credit card fraud dataset
 elif DATASET == "credit":
-
-    print("="*60)
-    print("RESEARCH-GRADE PREPROCESSING: CREDIT CARD FRAUD")
-    print("="*60)
-
+    print("Preprocessing: Credit card fraud")
     url = "https://storage.googleapis.com/download.tensorflow.org/data/creditcard.csv"
     df = pd.read_csv(url)
-
     print(f"Original samples: {len(df)}")
-
-    # Safety (dataset usually clean, but keep consistent with Adult pipeline)
     df = df.dropna()
     print(f"After cleaning: {len(df)}")
-
-    # Target
     y = df['Class'].values
-
-    # Features
     X = df.drop('Class', axis=1)
-
-    # IMPORTANT: already numerical (PCA transformed)
     X = X.astype('float32')
-
     feature_names = X.columns.tolist()
-
     print(f"Total features: {len(feature_names)}")
     print("\nSkipping scaling at global level (will scale per client)")
     print(f"Final shape: {X.shape}")
 
-    # ==============================
-    # STRATIFIED SPLIT (CRITICAL)
-    # ==============================
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
         test_size=0.2,
         random_state=42,
         stratify=y
     )
-
     print(f"\nTrain shape: {X_train.shape}")
     print(f"Test shape: {X_test.shape}")
 
-    # ==============================
-    # CLASS DISTRIBUTION DEBUG (VERY IMPORTANT)
-    # ==============================
     print("\nClass distribution (Train):")
     print(f"Class 0: {sum(y_train==0)}")
     print(f"Class 1: {sum(y_train==1)}")
@@ -123,23 +75,16 @@ elif DATASET == "credit":
     print(f"Class 0: {sum(y_test==0)}")
     print(f"Class 1: {sum(y_test==1)}")
 
-    # ==============================
-    # SAVE
-    # ==============================
     os.makedirs('data', exist_ok=True)
-
     with open('data/credit_train.pkl', 'wb') as f:
         pickle.dump({
             'X': X_train,
             'y': y_train,
             'feature_names': feature_names
         }, f)
-
     with open('data/credit_test.pkl', 'wb') as f:
         pickle.dump({
             'X': X_test,
             'y': y_test,
             'feature_names': feature_names
         }, f)
-
-    print("\nCREDIT DATA READY")

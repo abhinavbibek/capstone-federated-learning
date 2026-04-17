@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 import numpy as np
-
 import torch.nn.functional as F
 
 class FocalLoss(nn.Module):
@@ -23,16 +22,9 @@ class FocalLoss(nn.Module):
         return (focal_weight * bce_loss).mean()
 
 def train_local(model, X, y, epochs, lr, batch_size, dataset, global_weights=None, mu=0.01):
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     model.to(device)
     model.train()
-
-    num_pos = y.sum().item()
-    num_neg = len(y) - num_pos
-
-    # criterion = nn.BCEWithLogitsLoss()
     y_tensor = torch.FloatTensor(y).to(device)
     pos_weight = (len(y_tensor) - y_tensor.sum()) / (y_tensor.sum() + 1e-6)
     pos_weight = torch.clamp(pos_weight, min=5.0, max=50.0)
@@ -44,40 +36,24 @@ def train_local(model, X, y, epochs, lr, batch_size, dataset, global_weights=Non
     else:
         criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-
     X = torch.FloatTensor(X).to(device)
     y = torch.FloatTensor(y).reshape(-1, 1).to(device)
-
-    dataset_size = len(X)
-
     train_dataset = TensorDataset(X, y)
-
-    # =========================
-    # 🔥 BALANCED SAMPLER (ONLY CREDIT)
-    # =========================
     if dataset == "credit":
         y_np = y.cpu().numpy().astype(int).ravel()
-
         class_counts = np.bincount(y_np)
         weights = 1.0 / (class_counts + 1e-6)
-
         sample_weights = weights[y_np]
-
         sampler = WeightedRandomSampler(
             weights=sample_weights,
             num_samples=len(sample_weights),
             replacement=True
         )
-
         dataloader = DataLoader(
             train_dataset,
             batch_size=batch_size,
             sampler=sampler
         )
-
-        # 🔥 PRIOR FOR LOGIT ADJUSTMENT
-        prior = torch.mean(y).item()
-
     else:
         dataloader = DataLoader(
             train_dataset,
@@ -85,43 +61,25 @@ def train_local(model, X, y, epochs, lr, batch_size, dataset, global_weights=Non
             shuffle=True
         )
 
-        prior = None
-
-
-    # =========================
-    # TRAIN LOOP
-    # =========================
     for epoch in range(epochs):
-
         epoch_loss = 0
         num_batches = 0
-
         for batch_x, batch_y in dataloader:
-
             batch_x = batch_x.to(device)
             batch_y = batch_y.to(device)
-
             optimizer.zero_grad()
-
             logits = model(batch_x)
-
             loss = criterion(logits, batch_y)
-
-            # =========================
-            # FEDPROX PROXIMAL TERM
-            # =========================
+            # Fedprox proximal term
             if global_weights is not None:
                 prox_loss = 0.0
                 for param, global_param in zip(model.parameters(), global_weights):
                     prox_loss += torch.norm(param - global_param.to(device)) ** 2
-
                 loss += (mu / 2) * prox_loss
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-
             epoch_loss += loss.item()
             num_batches += 1
-    
     return model.state_dict(), epoch_loss / num_batches

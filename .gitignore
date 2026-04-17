@@ -1,17 +1,12 @@
 # Python cache
 __pycache__/
 *.pyc
-
-# Data files
 data/*.pkl
-
-# Model weights
 *.pth
-
-# Logs & results
 results/
 *.log
-
-# Environment
 .env
 venv/
+*.csv
+*.sh
+system_run/

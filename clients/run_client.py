@@ -2,7 +2,6 @@
 import flwr as fl
 import sys
 import time
-
 from clients.fl_client import FLClient
 from configs.config import EXPERIMENTS
 
