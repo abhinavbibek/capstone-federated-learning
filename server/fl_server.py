@@ -260,7 +260,7 @@ def get_eval_fn(exp_name, dataset, strategy):
                 drift = shap_drift(base_global, curr_global)
                 print(f"Shap drift {drift:.4f}")
                 if drift > 0.2:
-                    print("High explanation drift detected → possible attack")
+                    print("High explanation drift detected : possible attack")
             except:
                 pass       
         return loss, {"accuracy": acc}
